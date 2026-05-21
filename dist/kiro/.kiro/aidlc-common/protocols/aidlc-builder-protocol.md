@@ -100,7 +100,7 @@ Skip this step entirely when the skill's `plan-creation: "false"` — go straigh
    - **application-design**: describe logical behaviour only — no language, framework, database, protocol, broker, or vendor specifics.
    - **functional-design**: technology-agnostic domain/business logic only.
 5. **Gap handling.** If you discover a requirement or capability not covered by the inputs, raise it as a follow-up question. Do not silently add functionality beyond what is documented upstream.
-6. **Brownfield context.** When a skill's prerequisites mention brownfield, accept brownfield context from any available source: codekb, reverse-engineering artifacts, org-level knowledge base, or LLM analysis of the existing codebase. Do not restate this in the skill's `SKILL.md`.
+6. **Brownfield context.** When a skill's prerequisites mention brownfield, accept brownfield context from any available source: RE-kb, reverse-engineering artifacts, org-level knowledge base, or LLM analysis of the existing codebase. Do not restate this in the skill's `SKILL.md`.
 
 ## 4. State File Responsibilities
 

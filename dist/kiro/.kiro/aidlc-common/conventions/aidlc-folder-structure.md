@@ -3,7 +3,7 @@
 ```
 org-ai-kb/
 │
-├── codekb/
+├── re-kb/
 │   ├── <repo-a>/
 │   │   ├── summary.md                     tech stack, purpose, ownership (RE-generated)
 │   │   ├── architecture.md                (RE-generated)
@@ -85,7 +85,7 @@ org-ai-kb/
         │   │   ├── screen-data-map.md
         │   │   ├── screen-structure.md
         │   │   ├── wireframe-guidance.md
-        │   │   └── wireframes/                 (visual files — SVG or HTML per screen)
+        │   │   └── screens/                    (visual files — SVG or HTML per screen)
         │   │       └── <screen-name>.svg|html
         │   ├── application-design/             (artifacts produced by the application-design skill)
         │   │   ├── application-design-questions.md
@@ -131,7 +131,7 @@ org-ai-kb/
         │   │   │   ├── infrastructure-design-plan.md
         │   │   │   ├── infrastructure-design.md
         │   │   │   └── deployment-architecture.md
-        │   │   ├── code/
+        │   │   ├── code-generation/
         │   │   │   ├── code-generation-questions.md
         │   │   │   ├── code-generation-plan.md
         │   │   │   └── CODE_SUMMARY.md
@@ -146,11 +146,11 @@ org-ai-kb/
 
 ## Document Lifecycle
 
-There are two categories of documents in codekb.
+There are two categories of documents in RE-kb.
 
-**Category 1: Reverse-engineering documents** live flat at `codekb/<repo>/`. Generated when a repo is first onboarded via reverse engineering. They describe the repo as it exists today.
+**Category 1: Reverse-engineering documents** live flat at `re-kb/<repo>/`. Generated when a repo is first onboarded via reverse engineering. They describe the repo as it exists today.
 
-**Category 2: Engineering documents** are generated during construction and live under `codekb/<repo>/engineering/intent-<nnn>/`. During construction they reside in `aidlc-docs/intent-<nnn>/construction/<unit>/`. After the unit is deployed, they are moved to `codekb/<repo>/engineering/intent-<nnn>/`. Each intent gets its own folder.
+**Category 2: Engineering documents** are generated during construction and live under `re-kb/<repo>/engineering/intent-<nnn>/`. During construction they reside in `aidlc-docs/intent-<nnn>/construction/<unit>/`. After the unit is deployed, they are moved to `re-kb/<repo>/engineering/intent-<nnn>/`. Each intent gets its own folder.
 
 `intent-history.md` tracks which intents touched the repo in order. The last entry is the latest state.
 
@@ -158,7 +158,7 @@ There are two categories of documents in codekb.
 
 The intent folder captures the story of how work was done — the questions asked, plans made, decisions recorded, and progress tracked. Once an intent is complete, this folder becomes an immutable historical record. It answers "what happened and why."
 
-The codekb captures the current truth about each repository — its domain model, business rules, non-functional design, infrastructure, and how it integrates with other systems. Unlike the intent folder, codekb documents are living. They are never overwritten, only extended — although old decisions may become void over time, which may lead to removal of outdated sections.
+The RE-kb captures the current truth about each repository — its domain model, business rules, non-functional design, infrastructure, and how it integrates with other systems. Unlike the intent folder, RE-kb documents are living. They are never overwritten, only extended — although old decisions may become void over time, which may lead to removal of outdated sections.
 
 ## Workspace Setup
 

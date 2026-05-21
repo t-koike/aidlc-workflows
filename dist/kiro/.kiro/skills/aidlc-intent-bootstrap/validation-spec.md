@@ -15,6 +15,6 @@
 4. `audit/intent-audit.md` exists at the intent root.
 5. `workflow.md` exists at the intent root and contains exactly one non-comment, non-empty line: the `workflow-composition` line invoking `--phase bootstrap`. It must NOT contain an `intent-bootstrap` line.
 6. `intent.md` exists at the intent root and contains: the verbatim user prompt, a summary, a slug, and a type.
-7. `bootstrap-context.md` exists in `bootstrap/intent-bootstrap/` and states: classification (greenfield, brownfield, or mixed), repos in scope (or "none"), codekb status, and a reverse-engineering decision.
+7. `bootstrap-context.md` exists in `bootstrap/intent-bootstrap/` and states: classification (greenfield, brownfield, or mixed), repos in scope (or "none"), RE-kb status, and a reverse-engineering decision.
 8. The slug in `intent.md` matches the slug in the intent directory name.
 9. The classification, repos, and reverse-engineering decision in `bootstrap-context.md` are consistent with the answers in `intent-bootstrap-questions.md`.
