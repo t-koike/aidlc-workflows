@@ -24,7 +24,7 @@ Where nfr-assessment answered "what technology" and nfr-design answered "what pa
 
 - NFR assessment must be complete for this unit — `nfr-requirements.md`, `tech-stack-decisions.md` must be approved
 - NFR design should be complete (if applicable) — `nfr-design-patterns.md`, `logical-components.md`
-- Functional design must be complete — `business-logic-model.md`, `domain-entities.md`, `business-rules.md`
+- Functional design should be complete (if applicable) — `business-logic-model.md`, `domain-entities.md`, `business-rules.md`
 - Application design artifacts must be available — `components.md`, `component-dependencies.md`, `services.md`, `cross-cutting.md`
 
 ## Input
