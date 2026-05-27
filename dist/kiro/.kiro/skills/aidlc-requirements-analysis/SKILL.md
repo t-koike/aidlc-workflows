@@ -16,17 +16,17 @@ metadata:
 
 # Requirements Analysis
 
-Elicit, structure, and validate requirements from the human's statement of intent. Determine whether the intent is greenfield, brownfield, or a mix by reasoning over codekb.
+Elicit, structure, and validate requirements from the human's statement of intent. Determine whether the intent is greenfield, brownfield, or a mix by reasoning over the RE-kb.
 
 ## Prerequisites
 
 - org-ai-kb must be set up
-- codekb must be hydrated (if existing repos are in scope)
+- RE-kb must be hydrated (if existing repos are in scope)
 
 ## Input
 
 - Human's statement of intent
-- codekb summaries, integration maps, and domain entities for all repos
+- RE-kb summaries, integration maps, and domain entities for all repos
 
 ## Question Guidance
 
@@ -35,8 +35,8 @@ Focus clarifying questions on:
 - What exactly is being requested? What is the expected outcome?
 - Request type: new feature, bug fix, refactoring, migration, enhancement, new project?
 - Scope: single component, multiple components, system-wide, cross-system?
-- Based on codekb, infer whether this is greenfield or brownfield. If codekb has relevant repos, state your assessment and ask the human to confirm: "This looks like a brownfield change affecting repos X and Y — is that correct?"
-- If codekb has repos, identify which appear affected and confirm scope with the human.
+- Based on RE-kb, infer whether this is greenfield or brownfield. If RE-kb has relevant repos, state your assessment and ask the human to confirm: "This looks like a brownfield change affecting repos X and Y — is that correct?"
+- If RE-kb has repos, identify which appear affected and confirm scope with the human.
 - Functional requirements: core features, user interactions, system behaviours, data requirements.
 - Non-functional requirements: performance, security, scalability, usability.
 - Business context: goals, success criteria, stakeholder needs, constraints.

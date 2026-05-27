@@ -5,7 +5,7 @@
 - Artifacts: `code-generation-plan.md`, `CODE_SUMMARY.md`, generated source code and tests in the workspace
 - Answered question file: `code-generation-questions.md`
 - Upstream: `components.md`, `component-methods.md`, `component-dependencies.md`, `services.md`, `cross-cutting.md`, `data-models.md` (if present), `api-contracts.md` (if present), `stories.md`, `units-of-work.md`, `units-of-work-story-map.md`
-- Upstream (if present): `business-logic-model.md`, `domain-entities.md`, `business-rules.md`, `nfr-requirements.md`, `tech-stack-decisions.md`
+- Upstream (if present): `business-logic-model.md`, `domain-entities.md`, `business-rules.md`, `nfr-requirements.md`, `tech-stack-decisions.md`, `nfr-design-patterns.md`, `logical-components.md`, `screen-data-map.md`, `screen-structure.md`, `wireframe-guidance.md`
 
 ## Rules
 

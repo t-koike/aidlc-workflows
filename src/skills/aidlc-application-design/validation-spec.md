@@ -6,6 +6,7 @@
 - Artifacts (conditional, if present): `data-models.md`, `api-contracts.md`, `event-catalog.md`, `external-dependencies.md`
 - Answered question file: `application-design-questions.md`
 - Upstream: `requirements.md`, `stories.md`, `personas.md`
+- Upstream (if present): `screen-data-map.md`
 
 ## Rules
 
@@ -20,3 +21,4 @@
 9. Every external dependency in `external-dependencies.md` must have at least one consumer mapped to a component or service.
 10. All artifacts describe logical behaviour — no language, framework, database, protocol, broker, or vendor specifics.
 11. Circular dependencies between components must be listed in `component-dependencies.md` with explicit justification.
+12. If `screen-data-map.md` is present, every data field it references must be providable by at least one component, service, or API in the design. Any screen data need that cannot be served by the current design must be flagged.

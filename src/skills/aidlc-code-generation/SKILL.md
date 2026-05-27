@@ -30,6 +30,9 @@ Generate production-ready code in small, testable chunks following a layered app
 - `cross-cutting.md`, `data-models.md`, `api-contracts.md` (as applicable)
 - `units-of-work.md` and unit assignment (if per-unit execution)
 - `functional-design/` artifacts (if applicable — business logic and rules to implement)
+- `nfr-design-patterns.md`, `logical-components.md` (if present — patterns and components to implement)
+- `nfr-requirements.md`, `tech-stack-decisions.md` (if present — technology choices and NFR targets)
+- `screen-data-map.md`, `screen-structure.md`, `wireframe-guidance.md` (if present — for frontend layer generation)
 - For brownfield: `technology-stack.md`, `code-structure.md` from RE, plus the target codebase
 
 ## Layered Chunking Strategy

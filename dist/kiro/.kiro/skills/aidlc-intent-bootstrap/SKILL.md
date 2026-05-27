@@ -36,10 +36,10 @@ Ask only what cannot be inferred. In order:
 - **Slug** — present the auto-generated kebab-case slug; offer to override.
 - **Classification** — greenfield, brownfield, or mixed. Confirm only if non-trivial.
 - **Repos in scope** — brownfield/mixed only.
-- **Codekb hydration / reverse-engineering need** — brownfield/mixed only.
+- **RE-kb status / reverse-engineering need** — "Do you have an existing reverse-engineering knowledge base (RE-kb) for the repos in scope, or do you want to reverse-engineer them now?" Brownfield/mixed only.
 - **Intent type** — feature, bug fix, migration, refactor, prototype, etc.
 
-For greenfield with no codekb, slug + type may be all that's worth asking.
+For greenfield with no RE-kb, slug + type may be all that's worth asking.
 
 ## Plan
 
@@ -74,7 +74,7 @@ For greenfield with no codekb, slug + type may be all that's worth asking.
 
 - **Classification** — greenfield / brownfield / mixed (with rationale)
 - **Repos in scope** — list, or "none"
-- **Codekb status** — hydrated / partial / missing per repo, or "n/a"
+- **RE-kb status** — hydrated / partial / missing per repo, or "n/a"
 - **Reverse-engineering** — needed (per repo) or not needed
 
 ## Return value

@@ -33,7 +33,7 @@ Compose the adaptive workflow for this intent by selecting skills from `skills/a
 
 Apply §1 to evaluate every catalogue skill against the intent. Derive what you can; ask only on genuine ambiguity. Examples:
 
-- Should reverse-engineering run? (skip if codekb is hydrated)
+- Should reverse-engineering run? (skip if RE-kb is hydrated)
 - For a tiny bug fix, should user-stories or application-design be skipped?
 - Any per-skill flag overrides (`plan-verification`, `artefact-verification`)?
 
@@ -47,7 +47,7 @@ Apply §1 to evaluate every catalogue skill against the intent. Derive what you 
 6. Do not reference the examples in §3 by name when presenting the workflow — they are internal reasoning aids.
 7. Only list skills that will execute. Do not list skipped skills.
 8. Reverse engineering:
-   - codekb hydrated for the affected repos → skip RE.
+   - RE-kb hydrated for the affected repos → skip RE.
    - Otherwise → one `reverse-engineering` invocation per repo that needs analysis.
    - Greenfield with integration targets → RE those targets only.
    - Brownfield → RE included by default for affected repos.
@@ -80,7 +80,7 @@ Examples are arranged from minimal to maximal. Each notes what was **skipped** a
 
 **Workflow:** requirements-analysis → code-generation → build-and-test.
 
-(For brownfield: prepend reverse-engineering for the affected repo if codekb is not hydrated.)
+(For brownfield: prepend reverse-engineering for the affected repo if RE-kb is not hydrated.)
 
 **Skipped:** user-stories (no new user-facing behaviour), application-design (no component changes), units-generation (one trivial change), functional-design (no new domain logic), nfr-assessment (no NFR shift), nfr-design, infrastructure-design.
 
@@ -134,7 +134,7 @@ Per-unit construction skills run once with `--unit <service-name>`.
 
 **Workflow:** requirements-analysis → user-stories → application-design → units-generation → functional-design (per unit) → nfr-assessment (per unit) → nfr-design (per unit) → infrastructure-design (per unit) → code-generation (per unit) → build-and-test.
 
-**Skipped:** reverse-engineering, unless the system integrates with existing repos that aren't in codekb — in which case RE those repos first.
+**Skipped:** reverse-engineering, unless the system integrates with existing repos that aren't in RE-kb — in which case RE those repos first.
 
 This is the textbook full pipeline. Most intents are not this; reach for it only when units-generation actually produces multiple units.
 
