@@ -29,8 +29,8 @@ v2 does not yet ship release zips. To try it, clone this branch and follow the p
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) — used by the build script and the deterministic process checker
-- `make` and a POSIX shell — preinstalled on macOS and Linux. On Windows, use [Git Bash](https://git-scm.com/downloads) or WSL, and install `make` (e.g. via [Chocolatey](https://chocolatey.org/): `choco install make`)
+- [Node.js](https://nodejs.org/) — used to run the build script (via `npm`) and the deterministic process checker
+- A POSIX shell to run the build script — preinstalled on macOS and Linux. On Windows, use [Git Bash](https://git-scm.com/downloads) or WSL.
 - One of the [supported platforms](#platform-support)
 
 ### Clone the repo
@@ -69,7 +69,7 @@ The commands assume you cloned this repo to `~/workspaces/aidlc-workflows`. Repl
 From the cloned repo:
 
 ```bash
-make build-kiro
+npm run build:kiro
 ```
 
 This produces `dist/kiro/.kiro/`, which works for both Kiro IDE and Kiro CLI.
@@ -148,7 +148,7 @@ Run `kiro-cli`, then `/context show`. Confirm that `.kiro/skills/` and `.kiro/ai
 | Skills not loading in Kiro | Confirm `.kiro/` at your project root contains `agents/`, `aidlc-common/`, `hooks/`, and `skills/` (other Kiro-managed folders may also be present). Restart your Kiro session after copying. |
 | File encoding issues | Ensure files are UTF-8 encoded. |
 | Rules not applied in session | Start a new chat session after updating `.kiro/`. |
-| Build fails | Confirm Node.js, `make`, and a POSIX shell are installed and on your `PATH`. Run `make clean && make build-kiro`. |
+| Build fails | Confirm Node.js and a POSIX shell are installed and on your `PATH`. Run `npm run clean && npm run build:kiro`. |
 | Windows paths not resolving | Use forward slashes `/` inside markdown files. Backslashes can break path resolution. |
 
 ---
@@ -158,7 +158,7 @@ Run `kiro-cli`, then `/context show`. Confirm that `.kiro/skills/` and `.kiro/ai
 v2 is pre-release. If you want to experiment:
 
 - Edit `src/` only — never hand-edit `dist/`, it is generated.
-- Rebuild with `make build-kiro`, then commit both your `src/` change and the regenerated `dist/` so the install paths in this README keep working.
+- Rebuild with `npm run build:kiro`, then commit both your `src/` change and the regenerated `dist/` so the install paths in this README keep working.
 - Note: the repo `.gitignore` excludes `.kiro` to prevent stray installs from being committed. The pattern also matches `dist/kiro/.kiro/`, so brand-new files under that path may need `git add -f` (already-tracked files commit normally).
 
 A full contributing guide will be added before v2 graduates from this branch.
