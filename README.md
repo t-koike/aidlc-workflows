@@ -112,10 +112,6 @@ node build/claude-code/build.js
 cp -R dist/claude-code/.claude /path/to/your/project/
 ```
 
-### Usage
-
-Start any development task by stating your intent in chat. The orchestrator activates automatically and proposes a workflow tailored to your intent.
-
 ## Contributing
 
 - Edit `src/` only — never hand-edit `dist/`
