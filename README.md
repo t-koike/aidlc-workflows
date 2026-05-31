@@ -8,7 +8,7 @@ AI-DLC (AI-Driven Development Life Cycle) is a multi-agent workflow framework th
 
 The framework has five building blocks: Stages, Personas, Skills, Tools, and Conventions.
 
-**Stages** are tasks to be done. A stage defines what goes in, what comes out, and who owns it. It does not say how to do the work — that's the persona's job. Example: `requirements-analysis` takes an intent and produces `requirements.md`.
+**Stages** are tasks to be done. A stage defines what goes in, what comes out, and who owns it. It does not say how to do the work — that's the persona's job. Each stage has exactly one owner (the persona who produces the artifact) and zero or more contributors (personas who review it). Example: `requirements-analysis` takes an intent and produces `requirements.md`.
 
 **Personas** are specialized agents with a worldview and domain expertise. They are simulated professionals — a Product Owner thinks in user value and scope discipline, a Security Engineer thinks in threats and trust boundaries. Multiple personas collaborate at a stage through mob elaboration.
 
