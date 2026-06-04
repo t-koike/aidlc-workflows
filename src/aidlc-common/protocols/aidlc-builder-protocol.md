@@ -46,9 +46,19 @@ Apply these flags consistently across all invocation paths below.
 - Write the file. Update state through `pending → awaiting-human → answered → complete` in this single pass (the orchestrator is not consulted).
 - Continue to planning (or execution, if `plan-creation: "false"`).
 
-**If no clarification is needed:**
-- Transition clarification straight to `complete` (or skip clarification rows entirely if no question file is produced — but produce the question file with a brief note explaining why no questions were needed if the skill convention requires it).
+**If no clarification is needed and `human-clarification: "false"`:**
+- Transition clarification straight to `complete` (no question file needed).
 - Continue to planning (or execution, if `plan-creation: "false"`).
+
+**If no clarification is needed and `human-clarification: "true"`:**
+- You MUST still generate a clarification question file. Even for well-specified intents,
+  there are always edge cases, ambiguities, or implementation choices worth surfacing to the
+  human. Probe for: input validation edge cases, error handling choices not fully specified,
+  behaviour for boundary inputs, technology or library choices where the spec leaves room.
+  Write at least 3 questions with your recommendations. Leave `[Answer]:` blank.
+- Transition state to `clarification : awaiting-human`.
+- Return to the orchestrator: status `clarification-needed`, question file path.
+- Stop.
 
 ### 2.2 Invocation with Answered Questions
 

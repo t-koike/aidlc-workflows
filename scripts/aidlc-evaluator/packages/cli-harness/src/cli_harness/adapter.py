@@ -18,6 +18,8 @@ class AdapterConfig:
     prompt_template: str | None = None
     model: str | None = None
     aws_profile: str | None = None
+    aws_region: str | None = None
+    scorer_model: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     timeout_seconds: int = 7200  # 2 hours max
     # Path to the .kiro/ distribution directory (v2 agentic execution).
     # When set, the kiro adapter copies this into the workspace so Kiro

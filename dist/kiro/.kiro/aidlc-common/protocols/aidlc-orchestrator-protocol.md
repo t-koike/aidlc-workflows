@@ -156,6 +156,16 @@ Construction skills with `per-unit: "true"` run once per unit. Differences from 
 
 The §3 flow is identical — just scoped to one unit at a time.
 
+## 5.1 Scoped Skills
+
+Skills that run multiple times within the same phase use `--scope <scope-name>` (e.g., reverse-engineering per repo). Differences from unscoped inception:
+
+- Workflow lines include `--scope <scope-name>`.
+- Artifacts live at `inception/<skill>/<scope>/` instead of `inception/<skill>/`.
+- State key is `<skill>:<scope>` (e.g., `reverse-engineering:payments-api`).
+
+The §3 flow is identical — just scoped to one instance at a time.
+
 ## 6. See Also
 
 - `aidlc-common/protocols/aidlc-builder-protocol.md` — builder behaviour

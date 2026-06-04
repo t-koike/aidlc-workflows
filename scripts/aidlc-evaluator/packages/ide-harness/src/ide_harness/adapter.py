@@ -17,6 +17,10 @@ class AdapterConfig:
     tech_env_path: Path | None = None
     prompt_template: str | None = None
     timeout_seconds: int = 7200  # 2 hours max
+    kiro_dist_path: Path | None = None  # enables v2 agentic execution when set
+    aws_profile: str | None = None
+    aws_region: str | None = None
+    scorer_model: str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 
 @dataclass

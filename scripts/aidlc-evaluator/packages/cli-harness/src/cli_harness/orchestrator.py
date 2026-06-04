@@ -156,6 +156,8 @@ def run_cli_evaluation(
         prompt_template=prompt_template,
         model=model,
         aws_profile=profile,
+        aws_region=region,
+        scorer_model=scorer_model,
         timeout_seconds=timeout_seconds,
         kiro_dist_path=kiro_dist_path,
     )

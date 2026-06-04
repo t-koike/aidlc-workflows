@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+GIT_ROOT = REPO_ROOT.parent.parent  # scripts/aidlc-evaluator -> scripts -> git root
 PACKAGES = REPO_ROOT / "packages"
 TEST_CASES_DIR = REPO_ROOT / "test_cases"
 
@@ -32,6 +36,39 @@ sys.path.insert(0, str(PACKAGES / "shared" / "src"))
 from ide_harness.registry import get_adapter, list_adapters  # noqa: E402
 from ide_harness.orchestrator import run_ide_evaluation  # noqa: E402
 from shared.scenario import resolve_scenario  # noqa: E402
+
+_SLUG_MAX_LEN = 40
+
+
+def _git_branch(repo: Path) -> str:
+    """Return the current git branch name, or 'unknown' if unavailable."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def _rules_slug(git_root: Path) -> str:
+    """Derive a filesystem-safe slug: aidlc-workflows_{branch}."""
+    branch = _git_branch(git_root)
+    raw = f"aidlc-workflows_{branch}"
+    slug = re.sub(r"[^a-zA-Z0-9._-]", "", raw.replace(" ", "-"))
+    return slug[:_SLUG_MAX_LEN]
+
+
+def _default_output_dir(ide_name: str, slug: str) -> Path:
+    """Generate a timestamped output directory.
+
+    Format: runs/{timestamp}-{slug}-{ide_name}
+    Example: runs/20260603T200000-aidlc-workflows_v2-evaluator-kiro
+    """
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+    return REPO_ROOT / "runs" / f"{ts}-{slug}-{ide_name.lower()}"
 
 
 def main() -> None:
@@ -62,6 +99,15 @@ def main() -> None:
     parser.add_argument("--baseline", type=Path, default=None)
     parser.add_argument("--rules", type=Path, default=None, help="Path to AIDLC rules directory")
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--kiro-dist", type=Path, default=None,
+        help=(
+            "Path to the .kiro/ distribution directory for v2 agentic execution "
+            "(e.g. dist/kiro/.kiro). When set, the Kiro adapter copies this into "
+            "the workspace and invokes /skill aidlc-orchestrator. "
+            "Defaults to dist/kiro/.kiro relative to the repo root if it exists."
+        ),
+    )
     parser.add_argument("--profile", default=None, help="AWS profile (default: from config YAML)")
     parser.add_argument("--region", default=None, help="AWS region (default: from config YAML)")
     parser.add_argument("--scorer-model", default="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
@@ -116,8 +162,17 @@ def main() -> None:
         if candidate.is_file():
             args.baseline = candidate
 
-    output_dir = args.output_dir or REPO_ROOT / "runs" / scenario.name / f"ide-{args.ide.lower()}"
-    rules_path = args.rules or REPO_ROOT / "aidlc-rules"
+    rules_path = args.rules or GIT_ROOT / "aidlc-rules"
+
+    # Auto-discover kiro dist if not specified
+    kiro_dist = args.kiro_dist
+    if kiro_dist is None:
+        default_dist = GIT_ROOT / "dist" / "kiro" / ".kiro"
+        if default_dist.is_dir():
+            kiro_dist = default_dist
+
+    slug = _rules_slug(GIT_ROOT)
+    output_dir = args.output_dir or _default_output_dir(args.ide, slug)
 
     result, eval_rc = run_ide_evaluation(
         adapter=adapter,
@@ -132,6 +187,7 @@ def main() -> None:
         region=args.region,
         scorer_model=args.scorer_model,
         use_sandbox=args.sandbox,
+        kiro_dist_path=kiro_dist,
     )
 
     if not result.success:

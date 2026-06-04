@@ -28,6 +28,7 @@ Each skill has exactly one row. When updating state, find the existing row for t
 
 - Inception skills: Skill column contains the skill name (e.g., `requirements-analysis`).
 - Construction skills (per-unit): Skill column contains `<skill-name>:<unit-name>` (e.g., `functional-design:auth-service`).
+- Scoped skills: Skill column contains `<skill-name>:<scope-name>` (e.g., `reverse-engineering:payments-api`).
 
 ### 3. Artifacts column
 
@@ -35,6 +36,7 @@ Bare filenames only — not full paths (e.g., `requirements.md`, not `inception/
 
 `process_checker` resolves them relative to:
 - inception: `inception/<skill>/`
+- inception (scoped): `inception/<skill>/<scope>/`
 - construction: `construction/<unit>/<skill>/`
 
 Comma-separated, or `—` if none.

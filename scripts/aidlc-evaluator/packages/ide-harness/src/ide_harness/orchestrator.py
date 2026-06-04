@@ -32,6 +32,7 @@ def run_ide_evaluation(
     prompt_template: str | None = None,
     timeout_seconds: int = 7200,
     use_sandbox: bool = True,
+    kiro_dist_path: Path | None = None,
 ) -> tuple[AdapterResult, int]:
     """Run the full IDE evaluation pipeline.
 
@@ -64,6 +65,10 @@ def run_ide_evaluation(
         output_dir=output_dir,
         prompt_template=prompt_template,
         timeout_seconds=timeout_seconds,
+        kiro_dist_path=kiro_dist_path,
+        aws_profile=profile,
+        aws_region=region,
+        scorer_model=scorer_model,
     )
 
     print(f"\nRunning {adapter.name} adapter...")
@@ -90,7 +95,7 @@ def run_ide_evaluation(
 
     # 4. Run evaluation pipeline (stages 2-6)
     eval_cmd = [
-        sys.executable, str(REPO_ROOT / "run_evaluation.py"),
+        sys.executable, str(REPO_ROOT / "scripts" / "run_evaluation.py"),
         "--evaluate-only", str(aidlc_docs),
         "--golden", str(golden_docs),
         "--scorer-model", scorer_model,
