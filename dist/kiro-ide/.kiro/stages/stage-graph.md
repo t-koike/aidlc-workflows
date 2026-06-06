@@ -19,14 +19,14 @@ Directed graph of all available stages. The orchestrator reads this during workf
 | requirements-analysis | Elicit and structure requirements from intent | aidlc-product-manager-agent |
 | story-generation | Decompose requirements into implementable stories | aidlc-product-manager-agent |
 | wireframe-design | Design UI screens as HTML wireframes | aidlc-ux-designer-agent |
-| application-design | Design logical component structure, services, dependencies | aidlc-systems-architect-agent |
-| units-generation | Decompose application design into implementable units of work | aidlc-systems-architect-agent |
+| domain-design | Identify and detail the logical building blocks (components) of the system | aidlc-systems-architect-agent |
+| units-generation | Group domain-design building blocks into deployable units | aidlc-systems-architect-agent |
+| contract-design | Define inter-unit contracts so teams can build in parallel | aidlc-systems-architect-agent |
 | functional-design | Design detailed business logic, domain entities, rules, and API spec per unit | aidlc-systems-architect-agent |
 | nfr-assessment | Operationalise NFRs into measurable targets and tech stack choices per unit | aidlc-systems-architect-agent |
 | nfr-design | Design patterns and logical components that satisfy NFR targets per unit | aidlc-systems-architect-agent |
 | infrastructure-design | Map logical components to infrastructure services and define deployment | aidlc-systems-architect-agent |
 | code-generation | Generate production code per unit with write-test-verify cycles | aidlc-sw-dev-engineer-agent |
-| build-and-test | Build, test, and verify the code | (tbd) |
 
 ## Dependencies
 
@@ -38,14 +38,14 @@ Stages have flexible inputs — they can start from multiple predecessors or dir
 | requirements-analysis | intent, wireframes, stories, existing docs, RE artifacts |
 | story-generation | requirements, intent, wireframes |
 | wireframe-design | stories + personas, requirements, intent |
-| application-design | requirements, stories, wireframes, RE artifacts |
-| units-generation | application-design (components + interactions must be known) |
-| functional-design | units-generation (unit definition + assigned stories + contracts) |
+| domain-design | requirements, stories, wireframes, RE artifacts |
+| units-generation | domain-design (components.yaml must exist) |
+| contract-design | units-generation (units + dependencies), components.yaml (entity shapes) |
+| functional-design | contract-design (contracts for this unit's boundaries), units-generation (unit definition + assigned stories) |
 | nfr-assessment | requirements.md (NFR section), functional-design artifacts for this unit |
 | nfr-design | nfr-assessment (targets + tech stack), functional-design artifacts, unit-contracts |
 | infrastructure-design | nfr-design (logical components + patterns), tech-stack-decisions |
-| code-generation | functional-design, nfr-assessment, nfr-design, infrastructure-design, units-generation, application-design, stories, requirements |
-| build-and-test | code-generation output |
+| code-generation | functional-design, nfr-assessment, nfr-design, infrastructure-design, units-generation, domain-design, stories, requirements |
 
 ## Composition Rules
 
@@ -60,7 +60,7 @@ The orchestrator must assess what the human brings:
 - **Existing stories provided** → skip story-generation
 - **Existing wireframes provided** → skip wireframe-design, derive requirements from them if needed
 - **Existing codebase (brownfield)** → check if org-ai-kb has context; if not, reverse-engineering needed
-- **Bug fix intent** → minimal workflow (maybe just code-generation → build-and-test)
+- **Bug fix intent** → minimal workflow (maybe just code-generation)
 - **Feature intent on existing system** → reverse-engineering + partial workflow
 
 ### Greenfield vs Brownfield
@@ -73,12 +73,12 @@ The orchestrator must assess what the human brings:
 
 ### Right-sizing
 
-- A trivial bug fix: code-generation → build-and-test (maybe requirements-analysis for documentation)
-- A simple utility: requirements-analysis → code-generation → build-and-test
-- A feature add (brownfield): reverse-engineering → requirements-analysis → story-generation → application-design → code-generation → build-and-test
-- A full greenfield system: requirements-analysis → story-generation → wireframe-design → application-design → code-generation → build-and-test
+- A trivial bug fix: code-generation (maybe requirements-analysis for documentation)
+- A simple utility: requirements-analysis → code-generation
+- A feature add (brownfield): reverse-engineering → requirements-analysis → story-generation → domain-design → code-generation
+- A full greenfield system: requirements-analysis → story-generation → wireframe-design → domain-design → code-generation
 - Wireframes only: wireframe-design (possibly requirements-analysis first)
-- Migration: reverse-engineering → requirements-analysis → application-design → code-generation → build-and-test
+- Migration: reverse-engineering → requirements-analysis → domain-design → code-generation
 
 ### User-specified ordering
 

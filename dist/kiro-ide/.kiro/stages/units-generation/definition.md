@@ -2,11 +2,11 @@
 
 ## Description
 
-Decompose the approved application design into implementable units of work. Each unit is a logical grouping of functionality that can be designed, built, and tested as a cohesive piece. For microservices, each unit typically becomes an independently deployable service. For monoliths, units represent logical modules within the single application. This stage bridges inception (what to build) and construction (how to build it, per-unit).
+Take the building blocks from domain-design and determine how to group them into deployable units. The architect interviews the human to understand their constraints — team structure, deployment preferences, scaling needs, operational maturity — and proposes a grouping that fits. The result might be microservices, a modular monolith, a handful of big services, separate frontends, or any combination. The components don't change — only how they're packaged into units for development and deployment.
 
 ## Inputs
 
-- **Required:** `components.md` or `component-interactions.md` from application-design (the system's logical structure must be known)
+- **Required:** `components.yaml` from domain-design (the system's building blocks must be known)
 - **Optional context:** `stories.md`, `requirements.md`, RE artifacts, deployment constraints
 
 ## Outputs
@@ -16,7 +16,6 @@ Artifacts this stage can produce. The owner's plan determines which are relevant
 - `units.md` — unit definitions with responsibilities, boundaries, and owned components
 - `unit-dependencies.md` — dependency matrix showing build/deploy ordering and integration points
 - `unit-story-map.md` — which stories each unit implements, ensuring full coverage
-- `unit-contracts.md` — inter-unit contracts defining how communicating units exchange data: protocol, payload shape, error handling, and ownership of the contract
 
 ## Owner
 
