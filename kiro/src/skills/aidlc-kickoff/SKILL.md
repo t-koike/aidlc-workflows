@@ -19,13 +19,18 @@ AI orchestrates, executes, and self-verifies.
 
 ## Workspace Setup
 
-Create the intent directory structure per `conventions/folder-structure.md`:
+Run the workspace setup script to create the intent directory skeleton:
 
-1. Determine the intent slug from the human's statement (kebab-case, concise)
-2. Pick the next intent number by checking existing `org-ai-kb/aidlc-docs/intent-*` directories
-3. Create `org-ai-kb/aidlc-docs/intent-<nnn>-<slug>/` with subdirectories: `state/`, `audit/`, `stages/`
-4. Write `intent.md` at the intent root (verbatim prompt + summary + slug + type)
-5. Initialize `state/state.json` per `conventions/state-schema.json` (empty stages array)
-6. Initialize `audit/audit.json` per `conventions/audit-schema.json` (empty entries array)
+```bash
+node .kiro/tools/workspace-setup.js <intent-slug>
+```
 
-After setup is complete, proceed to workflow composition.
+Where `<intent-slug>` is derived from the human's statement (kebab-case, concise — e.g. "customer-onboarding", "quiz-game", "fix-login-bug").
+
+The script creates:
+- `org-ai-kb/aidlc-docs/intent-<nnn>-<slug>/` with state, audit, stages directories
+- Initial `state.json`, `audit.json`, `workflow.json`, and `intent.md`
+
+If the script fails, create the structure manually per `conventions/folder-structure.md`.
+
+After setup is complete, update `intent.md` with the human's verbatim prompt and proceed to workflow composition.

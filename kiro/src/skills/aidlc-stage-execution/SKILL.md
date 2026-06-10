@@ -10,13 +10,14 @@ Drive each stage in the composed workflow through its cycle.
 
 ## Sequencing
 
-For each stage in `workflow.json`:
+For each stage:
 
 1. Read **only** the current stage's `definition.md` (do NOT read all stage definitions upfront)
 2. Verify inputs exist (outputs from prior stages)
-3. Drive the stage execution cycle (below)
-4. After stage completes, update `state/state.json` outputs array with each output as `{"name": "<filename>", "locationRelativeToIntentRoot": "<path>/"}`
-5. Advance to the next stage
+3. **Stage brief** — compose a brief statement for the human explaining what will happen in this stage: what inputs are being used, what will be produced, and what's needed from them (if anything). Derive this from the definition and current context. Present it before starting work.
+4. Drive the stage execution cycle (below)
+5. After stage completes, update `state/state.json` outputs array with each output as `{"name": "<filename>", "locationRelativeToIntentRoot": "<path>/"}`
+6. **Return to workflow composition** — after every stage completion, invoke `aidlc-workflow-composition` to propose the next stage. Do NOT auto-advance to the next stage mechanically. Composition proposes, human approves, then execution begins.
 
 ## Checkpoint
 

@@ -1,9 +1,9 @@
 ---
 name: aidlc-orchestration
 description: |
-  AI-DLC workflow orchestrator. Activate whenever the user states a fresh development intent — building, creating, implementing, fixing, migrating, refactoring, or adding a feature to a codebase.
+  AI-DLC workflow orchestrator. This is the primary entry point for ALL user requests in this workspace. Every prompt — whether it's building something new, fixing a bug, making a small change, adding a feature, modifying UI, updating logic, refactoring, migrating, or any other code-related request — goes through this orchestrator.
 
-  Use this skill for any free-form development prompt such as "build X", "add feature Y", "migrate Z to W", "fix the bug in V", "refactor U", or "create a new service for T".
+  Activate for ANY user message that implies a change to the codebase, no matter how small: "make buttons yellow", "add a grid", "fix the login", "build a new service", "update the dashboard", "change the font", "add validation", "refactor the API".
 ---
 
 # Orchestration
