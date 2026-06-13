@@ -22,13 +22,16 @@ AI orchestrates, executes, and self-verifies.
 Run the workspace setup script to create the intent directory skeleton:
 
 ```bash
-node .kiro/tools/workspace-setup.js <intent-slug>
+node .kiro/tools/workspace-setup.js [team-name] <intent-slug>
 ```
 
-Where `<intent-slug>` is derived from the human's statement (kebab-case, concise — e.g. "customer-onboarding", "quiz-game", "fix-login-bug").
+Where:
+- `<team-name>` is optional — if omitted, auto-discovers the existing team or defaults to "default"
+- `<intent-slug>` is derived from the human's statement (kebab-case, concise — e.g. "customer-onboarding", "quiz-game", "fix-login-bug")
 
 The script creates:
-- `org-ai-kb/aidlc-docs/intent-<nnn>-<slug>/` with state, audit, stages directories
+- `org-ai-kb/<team>/aidlc-docs/intent-<nnn>-<slug>/` with state, audit, stages directories
+- `org-ai-kb/<team>/memory/` with preferences.md, corrections.md, templates/ (if not already present)
 - Initial `state.json`, `audit.json`, `workflow.json`, and `intent.md`
 
 If the script fails, create the structure manually per `conventions/folder-structure.md`.

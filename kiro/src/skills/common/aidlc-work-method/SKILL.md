@@ -126,7 +126,7 @@ A skipped stage is not an error. It only changes how much the current stage must
   - **Minimal** — produce only what's needed to move forward. Skip optional sections. Be terse.
   - **Standard** — cover all required sections with practical thoroughness. Include rationale.
   - **Comprehensive** — fill every section, document alternatives, ensure full traceability.
-- Use the templates in the stage's `templates/` directory as the starting format for output artifacts
+- Use the templates in the stage's `templates/` directory as the starting format for output artifacts. **But first** check if a custom template exists at `org-ai-kb/<team>/memory/templates/<filename>` — if it does, use the team's version instead of the framework default.
 - When a stage refines a previous artifact, copy the relevant upstream artifact into the current stage directory first, preserve its stable IDs and structure, and expand it in place. New artifacts may be created when useful, but they must reference stable IDs from the copied-forward artifact so the blueprint does not drift as details are added.
 - Never return content only in chat — always write to disk first
 - Read files directly from the file system — do not rely on the orchestrator to pass file contents to you. You have file read tools; use them.

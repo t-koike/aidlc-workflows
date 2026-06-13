@@ -517,46 +517,60 @@ function handleValidate(args) {
 
 function handleCheckResume(args) {
   const workspace = args.workspace || ".";
-  const aidlcDocs = path.join(workspace, "org-ai-kb", "aidlc-docs");
+  const orgAiKb = path.join(workspace, "org-ai-kb");
 
-  if (!fs.existsSync(aidlcDocs)) {
-    succeed("No aidlc-docs found.", { hasActiveIntent: false });
+  if (!fs.existsSync(orgAiKb)) {
+    succeed("No org-ai-kb found.", { hasActiveIntent: false });
     return;
   }
 
-  const entries = fs.readdirSync(aidlcDocs).filter(d => d.startsWith("intent-"));
-  if (entries.length === 0) {
-    succeed("No intents found.", { hasActiveIntent: false });
+  // Discover team folders
+  const teams = fs.readdirSync(orgAiKb, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith("."))
+    .map(e => e.name);
+
+  if (teams.length === 0) {
+    succeed("No teams found.", { hasActiveIntent: false });
     return;
   }
 
-  entries.sort().reverse();
+  // Check each team's aidlc-docs for active intents
+  for (const team of teams) {
+    const aidlcDocs = path.join(orgAiKb, team, "aidlc-docs");
+    if (!fs.existsSync(aidlcDocs)) continue;
 
-  for (const entry of entries) {
-    const intentDir = path.join(aidlcDocs, entry);
-    const statePath = path.join(intentDir, "state", "state.json");
-    const state = readJson(statePath);
-    if (!state || !state.stages) continue;
+    const entries = fs.readdirSync(aidlcDocs).filter(d => d.startsWith("intent-"));
+    if (entries.length === 0) continue;
 
-    const allComplete = state.stages.length > 0 && state.stages.every(s => s.status === "complete");
-    if (allComplete) continue;
+    entries.sort().reverse();
 
-    const completed = state.stages.filter(s => s.status === "complete");
-    const active = state.stages.find(s => s.status !== "pending" && s.status !== "complete");
-    const nextPending = state.stages.find(s => s.status === "pending");
+    for (const entry of entries) {
+      const intentDir = path.join(aidlcDocs, entry);
+      const statePath = path.join(intentDir, "state", "state.json");
+      const state = readJson(statePath);
+      if (!state || !state.stages) continue;
 
-    succeed("Active intent found.", {
-      hasActiveIntent: true,
-      intentDir,
-      intentName: entry,
-      slug: state.intent,
-      totalStages: state.stages.length,
-      completedStages: completed.length,
-      activeStage: active ? active.stage : null,
-      activeStatus: active ? active.status : null,
-      nextPendingStage: nextPending ? nextPending.stage : null,
-    });
-    return;
+      const allComplete = state.stages.length > 0 && state.stages.every(s => s.status === "complete");
+      if (allComplete) continue;
+
+      const completed = state.stages.filter(s => s.status === "complete");
+      const active = state.stages.find(s => s.status !== "pending" && s.status !== "complete");
+      const nextPending = state.stages.find(s => s.status === "pending");
+
+      succeed("Active intent found.", {
+        hasActiveIntent: true,
+        intentDir,
+        intentName: entry,
+        team,
+        slug: state.intent,
+        totalStages: state.stages.length,
+        completedStages: completed.length,
+        activeStage: active ? active.stage : null,
+        activeStatus: active ? active.status : null,
+        nextPendingStage: nextPending ? nextPending.stage : null,
+      });
+      return;
+    }
   }
 
   succeed("All intents complete.", { hasActiveIntent: false });

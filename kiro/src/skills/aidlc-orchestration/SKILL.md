@@ -26,6 +26,16 @@ The human is the business representative. They answer questions, approve plans, 
 
 Read and follow all files in `conventions/`. They define the folder structure, state format, audit format, and workflow format.
 
+## Team Memory
+
+Before composing a workflow or executing a stage, check if `org-ai-kb/<team>/memory/` exists. If it does:
+
+1. Read `memory/preferences.md` — these are standing instructions that apply to all stages.
+2. Read `memory/corrections.md` — these are things the team has learned NOT to do.
+3. Apply both when composing workflows and when briefing personas on stage work.
+
+Team memory accumulates over time. After completing an intent, if the human expressed preferences or corrections during the workflow, ask: "Anything from this intent worth remembering for next time?" If yes, append to the appropriate memory file.
+
 ## Audit Trail
 
 You are the only one who writes to `audit/audit.json`. Write an entry every time the human makes a decision — what you presented and what they decided.
