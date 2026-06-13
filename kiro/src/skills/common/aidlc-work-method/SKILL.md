@@ -122,6 +122,10 @@ A skipped stage is not an error. It only changes how much the current stage must
 
 - Everything you produce gets written to a file on disk
 - Read and follow all files in `conventions/` — they define folder structure, question format, state format, and where everything goes
+- Check `workflow.json` for the `depth` field. Calibrate your output accordingly:
+  - **Minimal** — produce only what's needed to move forward. Skip optional sections. Be terse.
+  - **Standard** — cover all required sections with practical thoroughness. Include rationale.
+  - **Comprehensive** — fill every section, document alternatives, ensure full traceability.
 - Use the templates in the stage's `templates/` directory as the starting format for output artifacts
 - When a stage refines a previous artifact, copy the relevant upstream artifact into the current stage directory first, preserve its stable IDs and structure, and expand it in place. New artifacts may be created when useful, but they must reference stable IDs from the copied-forward artifact so the blueprint does not drift as details are added.
 - Never return content only in chat — always write to disk first

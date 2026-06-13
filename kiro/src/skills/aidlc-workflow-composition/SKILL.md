@@ -104,3 +104,25 @@ If nothing has changed, go straight to the stage proposal — no unnecessary que
 - **Options are specific** — tied to this stage, this intent, this context. Not generic boilerplate.
 - **Adapt continuously** — reassess before every stage. Plans change as you learn more.
 - **workflow.json grows incrementally** — each stage added as approved. Running record, not upfront commitment.
+
+## Depth
+
+Each stage runs at a depth that matches the intent's complexity. Depth affects how thorough the stage output is — not which stages run.
+
+| Depth | When | What it means for stage output |
+|---|---|---|
+| Minimal | Bug fix, hotfix, targeted change, prototype | Bare minimum: identify the problem, solve it, verify. Skip ceremony, skip optional sections, produce only what's needed to implement. |
+| Standard | Feature, MVP, single application | Practical thoroughness: cover all required sections, include rationale for decisions, produce artifacts that a developer can implement from without guessing. |
+| Comprehensive | Regulated system, enterprise, multi-team, compliance-required | Full ceremony: every section filled, alternatives documented, traceability complete, no shortcuts. Suitable for audit or handoff to another team. |
+
+**How to propose depth:** After deducing the category (Step 1), state the depth you're applying:
+
+> "This is a straightforward feature — running at Standard depth."
+
+Or:
+
+> "Regulated domain with PII — running Comprehensive so nothing slips through."
+
+The human can override: "make it leaner" → drop to Minimal. "Be more thorough" → raise to Comprehensive.
+
+Record the depth in `workflow.json` as a top-level field: `"depth": "standard"`. Personas read it and calibrate their output accordingly.
