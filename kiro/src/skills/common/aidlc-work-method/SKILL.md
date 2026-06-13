@@ -19,13 +19,21 @@ Write TWO files in the stage output directory:
 - `questions.md` — clarification questions you need answered. Use the format in `conventions/question-format.md`. If you have no questions, write a brief note explaining why.
 - `plan.md` — the steps you will take to produce the stage's output artifacts, with checkboxes for each substep.
 
-After writing both files, set this stage's status in `state/state.json` to `clarification-asked`.
+After writing both files, transition the stage:
+
+```bash
+node .kiro/tools/state-manager.js transition --intent <intent-dir> --stage <stage-name> --to clarification-asked --actor owner
+```
 
 ### Review answers and decide
 
 The human has answered your questions. Read `questions.md` with their answers. Decide:
 - If clear → proceed to produce artifacts.
-- If ambiguous → append follow-up questions to `questions.md` and set status to `further-clarification`.
+- If ambiguous → append follow-up questions to `questions.md` and transition:
+
+```bash
+node .kiro/tools/state-manager.js transition --intent <intent-dir> --stage <stage-name> --to further-clarification --actor owner
+```
 
 You may revise `plan.md` based on what you learned from the answers.
 
@@ -33,13 +41,27 @@ You may revise `plan.md` based on what you learned from the answers.
 
 Follow your plan. Produce the artifacts declared in the stage definition. As you complete each substep, mark its checkbox in `plan.md` as done (`[x]`). Write all outputs to the stage output directory.
 
-After all artifacts are written, set this stage's status in `state/state.json` to `artifact-generated`.
+After all artifacts are written, register each output and then transition:
+
+```bash
+node .kiro/tools/state-manager.js register-output --intent <intent-dir> --stage <stage-name> --name <filename> --location <dir-relative-to-intent-root-ending-with-/>
+```
+
+Once all outputs are registered:
+
+```bash
+node .kiro/tools/state-manager.js transition --intent <intent-dir> --stage <stage-name> --to artifact-generated --actor owner
+```
 
 ### Contribute to someone else's work (as contributor)
 
 Read the artifact produced by the owner from the stage directory. Write your findings to `<your-persona-name>-contribution.md` in the stage directory. Be specific — reference sections, fields, or gaps.
 
-After writing your contribution, set your contribution entry in `state/state.json` to `contributed: true`.
+After writing your contribution, register it:
+
+```bash
+node .kiro/tools/state-manager.js register-contribution --intent <intent-dir> --stage <stage-name> --persona <your-persona-name>
+```
 
 ### Final review (as reviewer)
 
@@ -55,24 +77,31 @@ Do NOT set the stage status. The orchestrator sets `final-review-complete` after
 
 Read the contributor contribution files (`*-contribution.md` from contributors). Address their findings — fix issues, fill gaps, respond to challenges. Update your artifacts in place. Document your reasoning for anything you chose not to address.
 
-After refining, set this stage's status in `state/state.json` to `refined`.
+After refining, transition:
+
+```bash
+node .kiro/tools/state-manager.js transition --intent <intent-dir> --stage <stage-name> --to refined --actor owner
+```
 
 ### Finalise based on reviewer feedback
 
 Read the final reviewer's review file. Address their findings — fix remaining gaps, resolve any "not ready" items. Update your artifacts in place.
 
-After finalising, set this stage's status in `state/state.json` to `finalised`.
+After finalising, transition:
+
+```bash
+node .kiro/tools/state-manager.js transition --intent <intent-dir> --stage <stage-name> --to finalised --actor owner
+```
 
 ## State Write Contract
 
-Whenever you produce or modify a file in the stage directory, register it in the current stage entry's `outputs` array before handing control back. Use this exact format:
+All state mutations go through the state-manager tool. Never write `state/state.json` directly.
 
-```json
-{
-  "name": "<filename-only>",
-  "locationRelativeToIntentRoot": "<directory-relative-to-intent-root-ending-with-/>"
-}
-```
+- **Transitions:** `node .kiro/tools/state-manager.js transition --intent <dir> --stage <name> --to <status> --actor <role>`
+- **Register outputs:** `node .kiro/tools/state-manager.js register-output --intent <dir> --stage <name> --name <file> --location <path/>`
+- **Register contributions:** `node .kiro/tools/state-manager.js register-contribution --intent <dir> --stage <name> --persona <name>`
+
+The tool validates transitions are legal, checks preconditions (files exist before claiming artifact-generated), and appends audit entries automatically. If the tool rejects a transition, fix the issue it reports before retrying.
 
 ## Artifact Resolution
 
