@@ -66,9 +66,9 @@
           },
           "autonomy": {
             "type": "string",
-            "enum": ["full", "guided", "supervised"],
+            "enum": ["autonomous", "guided", "supervised"],
             "default": "supervised",
-            "description": "Per-stage autonomy mode. 'supervised' = human answers questions AND reviews artifact. 'guided' = human answers questions but artifact auto-approves. 'full' = no human involvement, AI self-answers and auto-approves."
+            "description": "Per-stage autonomy mode. 'supervised' = human answers questions AND reviews artifact. 'guided' = human answers questions but artifact auto-approves. 'autonomous' = no human involvement, AI self-answers and auto-approves."
           }
         }
       }

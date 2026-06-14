@@ -17,16 +17,16 @@ For each stage:
 3. **Stage brief + template check:**
    - Compose a brief statement explaining what will happen: inputs, outputs, what's needed from the human.
    - **MANDATORY for guided and supervised stages:** Before invoking the persona, ask the human: "Do you have a template or format preference for this stage's output? (provide a file, paste it, or say 'skip')" **Do NOT skip this question.** If provided, save to `org-ai-kb/<team>/memory/templates/<output-filename>` for future use. If skipped, proceed with existing team template or framework default.
-   - **If full autonomy:** Skip the template question (templates were requested once before the first stage — see below).
+   - **If autonomous:** Skip the template question (templates were requested once before the first stage — see below).
 4. Drive the stage execution cycle (below)
 5. After stage completes, update `state/state.json` outputs array with each output as `{"name": "<filename>", "locationRelativeToIntentRoot": "<path>/"}`
 6. **Return to workflow composition** — after every stage completion, invoke `aidlc-workflow-composition` to propose the next stage. Do NOT auto-advance to the next stage mechanically. Composition proposes, human approves, then execution begins.
 
-## Full-Autonomy Template Gate
+## Autonomous Template Gate
 
-When the entire workflow is set to full autonomy, there is ONE interaction point before execution begins:
+When the entire workflow is set to autonomous, there is ONE interaction point before execution begins:
 
-> "You've chosen full autonomy — I'll run end-to-end without stopping. Before I begin: do you have any output templates to provide? (This is your only chance to influence formats — I won't stop between stages.)"
+> "You've chosen autonomous mode — I'll run end-to-end without stopping. Before I begin: do you have any output templates to provide? (This is your only chance to influence formats — I won't stop between stages.)"
 
 If the human provides templates, save them to `org-ai-kb/<team>/memory/templates/`. If they skip, use existing team templates or framework defaults. Then run all stages without interaction.
 
@@ -69,13 +69,13 @@ Each stage in `workflow.json` has an `autonomy` property:
 
 | Mode | Human Q&A | Human Review (gate) | Who decides contributors/reviewer |
 |---|---|---|---|
-| `full` | No — self-answered by owner's best judgment | No — auto-approved, immediately advances | AI decides during composition |
+| `autonomous` | No — self-answered by owner's best judgment | No — auto-approved, immediately advances | AI decides during composition |
 | `guided` | Yes — human answers clarification questions | No — auto-approved after artifact is produced | Human decides during composition |
 | `supervised` | Yes — human answers clarification questions | Yes — blocks at `presented`, human must approve | Human decides during composition |
 
 **Behaviour per mode:**
 
-- **`full`** — The AI runs end-to-end. Questions are self-answered. The orchestrator decides whether to include contributors/reviewers (it may still use them for quality, but the human is not involved). The `presented` state is set for auditability but immediately advances to `complete`. Audit notes "auto-approved (full autonomy)."
+- **`autonomous`** — The AI runs end-to-end. Questions are self-answered. The orchestrator decides whether to include contributors/reviewers (it may still use them for quality, but the human is not involved). The `presented` state is set for auditability but immediately advances to `complete`. Audit notes "auto-approved (autonomous)."
 - **`guided`** — The human answers clarification questions (plan is presented, questions block). But once the artifact is produced (and contributors/reviewers have done their internal work if assigned), it auto-advances to `complete` without presenting for human approval. The human shaped the plan but trusts the execution.
 - **`supervised`** — Everything blocks on human. Questions are presented and answered by human. The final artifact is presented for human approval. The orchestrator must yield and wait at every human gate.
 
@@ -89,7 +89,7 @@ When a reviewer is assigned, the cycle between owner and reviewer repeats until 
 
 The `reviewIterations` counter in state.json tracks how many times the reviewer has returned "not-ready." Once the cap is reached, the reviewer does not participate again.
 
-In `supervised` mode, after the review loop completes the artifact is presented to the human for approval. In `guided` and `full` modes, the artifact auto-advances to complete.
+In `supervised` mode, after the review loop completes the artifact is presented to the human for approval. In `guided` and `autonomous` modes, the artifact auto-advances to complete.
 
 ## Rules
 
@@ -99,7 +99,7 @@ In `supervised` mode, after the review loop completes the artifact is presented 
 4. **The `presented` state is always a hard stop in supervised mode** — the orchestrator presents a summary and waits. Period.
 5. **Row 3 (clarification) is always a human gate in supervised and guided modes.** Even if the owner has no questions, the plan itself is presented for human approval or adjustment.
 6. **The human can override autonomy at any time** by saying "stop" or "let me review that" — this implicitly switches the current stage to supervised.
-7. **In full and guided autonomy modes**, the audit log must clearly distinguish auto-approved entries from actual human decisions. Use "auto-approved (full autonomy)" or "auto-approved (guided)" rather than recording a fabricated human decision.
+7. **In autonomous and guided modes**, the audit log must clearly distinguish auto-approved entries from actual human decisions. Use "auto-approved (autonomous)" or "auto-approved (guided)" rather than recording a fabricated human decision.
 8. Each actor only sets state for what THEY did — never for what someone else will do.
 9. When re-invoking a persona, pass all relevant files from the stage directory as context.
 10. **If a stage has no `autonomy` property in workflow.json, default to `supervised`.** Human gates always block unless explicitly opted out.

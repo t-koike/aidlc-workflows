@@ -30,7 +30,7 @@ From workspace state + intent language + existing artifacts, classify internally
 |---|---|
 | `supervised` | Human answers questions AND reviews the final artifact |
 | `guided` | Human answers questions, artifact auto-approves (no human review of output) |
-| `full` | No human involvement — AI self-answers questions and auto-approves |
+| `autonomous` | No human involvement — AI self-answers questions and auto-approves |
 
 ## Step 2: Apply Learned Preferences (internal — no interaction)
 
@@ -41,7 +41,7 @@ Read `org-ai-kb/<team>/memory/preferences.md`. The file uses markdown tables gro
 | Stage | Autonomy | Contributors | Reviewer |
 |---|---|---|---|
 | requirements-analysis | guided | systems-architect | product-lead |
-| story-generation | full | none | product-lead |
+| story-generation | autonomous | none | product-lead |
 ```
 
 Find the table matching the deduced category from Step 1. If found, use those defaults (autonomy, contributors, reviewer) when proposing stages in Step 5. If no matching category exists, use framework defaults (supervised, contributors/reviewer from stage definition). Do NOT surface preferences to the human — just apply them silently. Human overrides at any stage get captured by the learnings hook.
@@ -96,14 +96,14 @@ For each stage, present the composition with autonomy visible in the header:
 > | Option | Rationale |
 > |---|---|
 > | Run as **guided** (skip your final review) | You trust the AI + reviewer to deliver — you only answer questions |
-> | Run as **fully autonomous** | Skip questions too — AI handles everything |
+> | Run as **autonomous** | Skip questions too — AI handles everything |
 > | Include a security contributor | Handles PII — catches compliance gaps early |
 > | Remove review | Your review is sufficient, saves time |
 > | Add an iteration | More chances of fixing gaps before you see it |
 >
 > Good to go, or pick an option?
 
-The autonomy mode MUST be stated in the header (e.g., "— supervised", "— guided", "— full"). Changing autonomy is always available as an option. The default is supervised unless learned preferences for this category say otherwise.
+The autonomy mode MUST be stated in the header (e.g., "— supervised", "— guided", "— autonomous"). Changing autonomy is always available as an option. The default is supervised unless learned preferences for this category say otherwise.
 
 **CRITICAL: Contributors and reviewers in the proposal and options MUST come from the stage's `definition.md`.** Read the stage definition's `## Contributors` and `## Reviewer` sections. Only propose personas listed there. Do NOT invent contributors or reviewers that don't exist in the stage definition.
 
@@ -127,7 +127,7 @@ node .kiro/tools/workflow-manager.js add-stage \
   --phase <inception|construction|operations> \
   --contributors <comma-separated-if-any> \
   --reviewer <reviewer-persona-if-any> \
-  --autonomy <supervised|guided|full>
+  --autonomy <supervised|guided|autonomous>
 
 node .kiro/tools/state-manager.js add-stage \
   --intent <intent-dir> \
@@ -136,7 +136,7 @@ node .kiro/tools/state-manager.js add-stage \
   --phase <inception|construction|operations> \
   --contributors <comma-separated-if-any> \
   --reviewer <reviewer-persona-if-any> \
-  --autonomy <supervised|guided|full>
+  --autonomy <supervised|guided|autonomous>
 ```
 
 Both calls are required. workflow.json is the plan record; state.json is the execution tracker. Then proceed to stage execution.
