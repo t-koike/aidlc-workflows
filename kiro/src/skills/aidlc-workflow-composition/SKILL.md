@@ -80,7 +80,23 @@ For each stage, present the composition and a table of modifications:
 
 **STOP HERE. Wait for the human to respond before executing the stage.**
 
+Once the human approves (or modifies and approves), register the stage in state.json:
+
+```bash
+node .kiro/tools/state-manager.js add-stage \
+  --intent <intent-dir> \
+  --stage <stage-name> \
+  --owner <owner-persona> \
+  --phase <inception|construction|operations> \
+  --contributors <comma-separated-if-any> \
+  --reviewer <reviewer-persona-if-any>
+```
+
+This makes the stage visible to the state-manager for transition tracking. Then proceed to stage execution.
+
 After the options table, always add: "**These are suggestions — you can add, drop, or reorder any stages, change contributors, adjust review cycles, or tell me to do something completely different.**"
+
+Also: **always default autonomy to supervised**. Only set `"autonomy": "full"` if the human explicitly requests it ("just do it", "skip the questions", "full autonomy"). Never silently grant full autonomy.
 
 Options should be specific to the stage and the intent — not generic. Options must cover all composable components where relevant: stage additions/removals, contributor changes, reviewer changes, and iteration count. Always include at least one stage-level option (skip a stage, add a stage, reorder) unless this is a full-scale build with all stages already included. Options should be driven by the trade-off between minimal cost/time and highest achievable quality for the classified intent type.
 
