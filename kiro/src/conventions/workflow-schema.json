@@ -66,9 +66,9 @@
           },
           "autonomy": {
             "type": "string",
-            "enum": ["full", "supervised"],
+            "enum": ["full", "guided", "supervised"],
             "default": "supervised",
-            "description": "Per-stage autonomy mode. 'supervised' = human gates block and wait. 'full' = human gates auto-approve (audit notes auto-approval)."
+            "description": "Per-stage autonomy mode. 'supervised' = human answers questions AND reviews artifact. 'guided' = human answers questions but artifact auto-approves. 'full' = no human involvement, AI self-answers and auto-approves."
           }
         }
       }

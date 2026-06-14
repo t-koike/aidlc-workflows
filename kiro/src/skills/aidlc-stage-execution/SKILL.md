@@ -56,18 +56,29 @@ Each row is one transition. The "Blocks on Human?" column determines whether the
 
 Each stage in `workflow.json` has an `autonomy` property:
 
-| Mode | Behaviour |
-|---|---|
-| `full` | Human gates are auto-approved. Orchestrator still sets `presented` (for auditability) but immediately advances to `complete`. Clarification questions are self-answered using the owner's recommendations. Audit entries note "auto-approved (full autonomy)." |
-| `supervised` | All human gates block. Orchestrator must yield and wait for the human to respond at every row marked "If supervised." |
+| Mode | Human Q&A | Human Review (gate) | Who decides contributors/reviewer |
+|---|---|---|---|
+| `full` | No — self-answered by owner's best judgment | No — auto-approved, immediately advances | AI decides during composition |
+| `guided` | Yes — human answers clarification questions | No — auto-approved after artifact is produced | Human decides during composition |
+| `supervised` | Yes — human answers clarification questions | Yes — blocks at `presented`, human must approve | Human decides during composition |
+
+**Behaviour per mode:**
+
+- **`full`** — The AI runs end-to-end. Questions are self-answered. The orchestrator decides whether to include contributors/reviewers (it may still use them for quality, but the human is not involved). The `presented` state is set for auditability but immediately advances to `complete`. Audit notes "auto-approved (full autonomy)."
+- **`guided`** — The human answers clarification questions (plan is presented, questions block). But once the artifact is produced (and contributors/reviewers have done their internal work if assigned), it auto-advances to `complete` without presenting for human approval. The human shaped the plan but trusts the execution.
+- **`supervised`** — Everything blocks on human. Questions are presented and answered by human. The final artifact is presented for human approval. The orchestrator must yield and wait at every human gate.
+
+**Default:** If a stage has no `autonomy` property in workflow.json, default to `supervised`.
 
 ## Review Loop
 
 When a reviewer is assigned, the cycle between owner and reviewer repeats until either:
-1. The reviewer returns verdict "ready" — artifact proceeds to human (row 12b)
-2. The iteration cap (`maxReviewIterations` in workflow.json, default 3) is reached — reviewer is bypassed, artifact goes to human with unresolved findings noted (row 12c)
+1. The reviewer returns verdict "ready" — artifact proceeds to next step
+2. The iteration cap (`maxReviewIterations` in workflow.json, default 3) is reached — reviewer is bypassed, artifact proceeds with unresolved findings noted
 
-The `reviewIterations` counter in state.json tracks how many times the reviewer has returned "not-ready." Once the cap is reached, the reviewer does not participate again — human and owner work together directly.
+The `reviewIterations` counter in state.json tracks how many times the reviewer has returned "not-ready." Once the cap is reached, the reviewer does not participate again.
+
+In `supervised` mode, after the review loop completes the artifact is presented to the human for approval. In `guided` and `full` modes, the artifact auto-advances to complete.
 
 ## Rules
 
@@ -75,9 +86,9 @@ The `reviewIterations` counter in state.json tracks how many times the reviewer 
 2. **No row may be skipped** unless explicitly noted (e.g., "skip to #10 if no contributors").
 3. **The orchestrator must NEVER write an audit entry recording a human decision until the human has actually responded in chat.**
 4. **The `presented` state is always a hard stop in supervised mode** — the orchestrator presents a summary and waits. Period.
-5. **Row 3 is always a human gate in supervised mode.** Even if the owner has no questions, the plan itself is presented for human approval or adjustment.
+5. **Row 3 (clarification) is always a human gate in supervised and guided modes.** Even if the owner has no questions, the plan itself is presented for human approval or adjustment.
 6. **The human can override autonomy at any time** by saying "stop" or "let me review that" — this implicitly switches the current stage to supervised.
-7. **In full autonomy mode**, the audit log must clearly distinguish auto-approved entries from actual human decisions. Use "auto-approved (full autonomy)" rather than recording a fabricated human decision.
+7. **In full and guided autonomy modes**, the audit log must clearly distinguish auto-approved entries from actual human decisions. Use "auto-approved (full autonomy)" or "auto-approved (guided)" rather than recording a fabricated human decision.
 8. Each actor only sets state for what THEY did — never for what someone else will do.
 9. When re-invoking a persona, pass all relevant files from the stage directory as context.
 10. **If a stage has no `autonomy` property in workflow.json, default to `supervised`.** Human gates always block unless explicitly opted out.
