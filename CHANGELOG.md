@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.5] - 2026-06-23
+
+Adds the extension/bundle mechanism's build layer (Layers 2–3 of `docs/reference/18-extension-mechanism.md`): an extension authored in `extensions/<name>/` (with an `extension.ts` manifest + core-shaped subtrees) is discovered like a harness and projected by the packager as a **committed delta** at `dist/<name>/extensions/<bundle>/`. The delta is computed as the difference between a base+bundle build and the base build — the bundle's subtrees are merged into the core roots in a temp tree so the compiler sees them, and only the new/differing files are kept. Base `dist/<harness>/` trees stay byte-identical, so existing installs and the core stage/agent counts are unaffected; `bun scripts/package.ts --check` byte-pins every delta. Ships with the `ops-min` fixture extension (one scope-gated operation stage). Re-copy your `dist/<harness>/` to pick up the regenerated tools.
+
+* **`extensions/<name>/`** is a new top-level authoring location. An extension declares an `ExtensionManifest` (`scripts/extension-types.ts`): `name`, `version`, `requiresBundle`, `numberRanges` (claimed stage-number ranges), and `contributes` (which core-shaped subtrees it ships).
+* **`bun scripts/package.ts`** now builds the base AND each discovered extension delta; **`--no-extensions`** builds the base only. **`--check`** verifies base parity and byte-pins every committed delta (catches a hand-edited delta as DIFFERS).
+* **Build-time guards:** a bundle stage must number inside one of its declared `numberRanges` (no overlap with core or other bundles), must namespace its produced artifacts with the `<bundle>-` prefix, and `requiresBundle` deps must resolve — each fails the build loudly with bundle attribution.
+* No runtime behaviour change; no change to base installs. Bundle stages activate via the existing scope grid (e.g. `scopes: [enterprise]`).
+
 ## [2.0.4] - 2026-06-23
 
 Adds an optional `bundle:` ownership field to every config type — stages, agents, scopes, rules, and sensors (Layer 1 of the extension mechanism, see `docs/reference/18-extension-mechanism.md`). The field tags which bundle a config item belongs to; absent means the framework core. Nothing reads it for behaviour yet — it is the identity hook later layers (packaging variants, drift, per-stage contribution merge) key off. Compiled output is byte-identical to 2.0.3: the value is stored only when authored, so no core item — none of which declare it — changes its compiled node, scope grid, or designer-export entry. Re-copy your `dist/<harness>/` to pick up the regenerated tools.

@@ -48,12 +48,19 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import type { HarnessManifest } from "./manifest-types.ts";
+import type { DirMap, HarnessManifest } from "./manifest-types.ts";
+import type { ExtensionManifest } from "./extension-types.ts";
 import { renderOnboarding } from "./onboarding.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_ROOT = join(REPO_ROOT, "core");
 const HARNESS_ROOT = join(REPO_ROOT, "harness");
+// Extensions (bundles) the packager projects as committed deltas. DISCOVERED,
+// not hardcoded (mirrors harness discovery): adding a bundle is one
+// extensions/<name>/ dir + extension.ts, zero edits here.
+const EXTENSIONS_ROOT = join(REPO_ROOT, "extensions");
+// Reserved bundle name — the framework core. An extension may not claim it.
+const CORE_BUNDLE = "core";
 // The shared onboarding-doc skeleton, rendered per harness (scripts/onboarding.ts).
 const ONBOARDING_SKELETON = join(CORE_ROOT, "templates", "onboarding.md");
 const HARNESS_TOKEN = /\{\{HARNESS_DIR\}\}/g;
@@ -139,17 +146,43 @@ function writeHarnessData(treeRoot: string, m: HarnessManifest): void {
 // deterministic from core/ sources (number + name are authored frontmatter), so
 // no compiled-data seed is copied in beforehand.
 // ---------------------------------------------------------------------------
-function buildTree(m: HarnessManifest, outRoot: string): string[] {
+// Copy core dirs (and, for a bundle-variant build, an extension's merged
+// subtrees) into <treeRoot>/<dst> with the standard transform + rules rename.
+// `extraDirs` lets a bundle merge its subtrees INTO the same core roots so the
+// single-root loaders (stagesDir(), loadAgents(), ...) see them at compile time.
+function copyCoreDirs(
+  treeRoot: string,
+  harnessDir: string,
+  dirs: DirMap[],
+  rulesRename: string | null,
+  srcRoot: string,
+): void {
+  for (const { src, dst } of dirs) {
+    const srcDir = join(srcRoot, src);
+    if (!existsSync(srcDir)) continue;
+    const finalDst = rulesRename && dst === "rules" ? rulesRename : dst;
+    for (const file of walk(srcDir)) {
+      const rel = relative(srcDir, file);
+      const outPath = join(treeRoot, finalDst, rel);
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, rulesRename));
+    }
+  }
+}
+
+function buildTree(m: HarnessManifest, outRoot: string, extraDirs: DirMap[] = []): string[] {
   const harnessDir = m.harnessDir;
   const treeRoot = join(outRoot, harnessDir);
 
   // 1. Copy core dirs with token substitution + rules rename.
-  for (const { src, dst } of m.coreDirs) {
-    const srcDir = join(CORE_ROOT, src);
-    if (!existsSync(srcDir)) continue;
+  copyCoreDirs(treeRoot, harnessDir, m.coreDirs, m.rulesRename, CORE_ROOT);
+  // 1b. Bundle-variant build only: merge the extension's subtrees into the SAME
+  //     roots (extraDirs already resolved to absolute-src / core-dst pairs).
+  for (const { src, dst } of extraDirs) {
+    if (!existsSync(src)) continue;
     const finalDst = m.rulesRename && dst === "rules" ? m.rulesRename : dst;
-    for (const file of walk(srcDir)) {
-      const rel = relative(srcDir, file);
+    for (const file of walk(src)) {
+      const rel = relative(src, file);
       const outPath = join(treeRoot, finalDst, rel);
       mkdirSync(dirname(outPath), { recursive: true });
       writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, m.rulesRename));
@@ -286,24 +319,221 @@ function loadManifest(name: string): HarnessManifest {
 }
 
 // ---------------------------------------------------------------------------
+// Extensions (bundles): discovery, load, and the build-time delta.
+// ---------------------------------------------------------------------------
+
+// Extension contributes-key → the core dst dir it merges into. Mirrors the
+// coreDirs dst names so merged files land where the single-root loaders read.
+const CONTRIBUTES_DST: Record<string, string> = {
+  stages: "aidlc-common/stages",
+  agents: "agents",
+  scopes: "scopes",
+  rules: "rules",
+  sensors: "sensors",
+  knowledge: "knowledge",
+};
+
+function discoverExtensions(): string[] {
+  if (!existsSync(EXTENSIONS_ROOT)) return [];
+  return readdirSync(EXTENSIONS_ROOT)
+    .filter((n) => existsSync(join(EXTENSIONS_ROOT, n, "extension.ts")))
+    .sort();
+}
+
+function loadExtension(name: string): ExtensionManifest {
+  const mod = require(join(EXTENSIONS_ROOT, name, "extension.ts")) as {
+    default: ExtensionManifest;
+  };
+  const ext = mod.default;
+  if (ext.name !== name) {
+    throw new Error(`extension "${name}": manifest name "${ext.name}" must match dir name`);
+  }
+  if (ext.name === CORE_BUNDLE) {
+    throw new Error(`extension may not claim the reserved bundle name "${CORE_BUNDLE}"`);
+  }
+  return ext;
+}
+
+// Resolve an extension's contributes map to absolute-src / core-dst DirMap pairs
+// for buildTree's extraDirs merge.
+function extensionDirs(ext: ExtensionManifest): DirMap[] {
+  const out: DirMap[] = [];
+  for (const [key, rel] of Object.entries(ext.contributes)) {
+    if (!rel) continue;
+    const dst = CONTRIBUTES_DST[key];
+    if (!dst) throw new Error(`extension "${ext.name}": unknown contributes key "${key}"`);
+    out.push({ src: join(EXTENSIONS_ROOT, ext.name, rel), dst });
+  }
+  return out;
+}
+
+// Validate the discovered extension set: requiresBundle deps resolve, no
+// number-range overlaps between bundles. (Per-stage number/range and artifact
+// prefix are checked in buildBundleDelta where the compiled graph is available.)
+function validateExtensions(exts: ExtensionManifest[]): void {
+  const names = new Set<string>([CORE_BUNDLE, ...exts.map((e) => e.name)]);
+  for (const ext of exts) {
+    for (const dep of ext.requiresBundle) {
+      const depName = dep.split("@")[0]; // ignore @^semver until §5.4
+      if (!names.has(depName)) {
+        throw new Error(
+          `extension "${ext.name}" requiresBundle "${dep}" — no such bundle (have: ${[...names].sort().join(", ")})`,
+        );
+      }
+    }
+  }
+  // Cross-bundle number-range overlap.
+  const seen: { bundle: string; phase: string; range: [number, number] }[] = [];
+  for (const ext of exts) {
+    for (const [phase, ranges] of Object.entries(ext.numberRanges)) {
+      for (const [lo, hi] of ranges) {
+        const r: [number, number] = [parseFloat(lo), parseFloat(hi)];
+        for (const prior of seen) {
+          if (prior.phase === phase && r[0] <= prior.range[1] && prior.range[0] <= r[1]) {
+            throw new Error(
+              `extension "${ext.name}" range [${lo},${hi}] in phase ${phase} overlaps ` +
+                `bundle "${prior.bundle}" [${prior.range[0]},${prior.range[1]}]`,
+            );
+          }
+        }
+        seen.push({ bundle: ext.name, phase, range: r });
+      }
+    }
+  }
+}
+
+// A bundle delta: install-root-relative path → bytes. Paths are relative to
+// dist/<name>/ (e.g. ".claude/aidlc-common/stages/operation/ops-min-deploy.md"),
+// committed under dist/<name>/extensions/<bundle>/.
+type Delta = Map<string, Buffer>;
+
+// Recursively read every file under root into a rel→bytes map.
+function readTree(root: string): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  if (!existsSync(root)) return out;
+  for (const f of walk(root)) out.set(relative(root, f), readFileSync(f));
+  return out;
+}
+
+// Build the committed delta for one (harness, extension) pair: the files a
+// base+bundle build produces that are NEW or DIFFER vs the base build. The merge
+// happens in a temp tree so the single-root loaders see the extension at compile;
+// only the diff is kept. baseFiles is the prebuilt base (built once, reused).
+function buildBundleDelta(
+  m: HarnessManifest,
+  ext: ExtensionManifest,
+  baseFiles: Map<string, Buffer>,
+): Delta {
+  const mergedTmp = mkdtempSync(join(tmpdir(), `aidlc-bundle-${m.name}-${ext.name}-`));
+  try {
+    const emitWritten = buildTree(m, mergedTmp, extensionDirs(ext));
+    // Validate the merged compiled graph: every bundle-owned stage must number
+    // inside a claimed range and prefix its produced artifacts with "<bundle>-".
+    validateBundleGraph(mergedTmp, m.harnessDir, ext);
+
+    const delta: Delta = new Map();
+    // In-harness files: diff merged <harnessDir>/ vs base.
+    const mergedRoot = join(mergedTmp, m.harnessDir);
+    for (const f of walk(mergedRoot)) {
+      const rel = join(m.harnessDir, relative(mergedRoot, f));
+      const bytes = readFileSync(f);
+      const base = baseFiles.get(rel);
+      if (!base || !base.equals(bytes)) delta.set(rel, bytes);
+    }
+    // Out-of-harness emit files (codex .agents/skills/, etc.): diff vs base.
+    for (const abs of emitWritten) {
+      if (abs.startsWith(join(mergedTmp, m.harnessDir) + "/")) continue; // already covered
+      const rel = relative(mergedTmp, abs);
+      const bytes = readFileSync(abs);
+      const base = baseFiles.get(rel);
+      if (!base || !base.equals(bytes)) delta.set(rel, bytes);
+    }
+    return delta;
+  } finally {
+    rmSync(mergedTmp, { recursive: true, force: true });
+  }
+}
+
+// Validate a built bundle variant's compiled stage graph: bundle-owned stages
+// number inside a claimed range and namespace their produced artifacts with the
+// "<bundle>-" prefix. Reads the merged stage-graph.json (which carries the
+// authored `bundle` and `number` per Layers 0/1).
+function validateBundleGraph(mergedTmp: string, harnessDir: string, ext: ExtensionManifest): void {
+  const graphPath = join(mergedTmp, harnessDir, "tools/data/stage-graph.json");
+  const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as Array<{
+    slug: string;
+    number: string;
+    phase: string;
+    bundle?: string;
+    produces?: string[];
+  }>;
+  for (const s of graph) {
+    if (s.bundle !== ext.name) continue;
+    const ranges = ext.numberRanges[s.phase] ?? [];
+    const n = parseFloat(s.number);
+    const inRange = ranges.some(([lo, hi]) => n >= parseFloat(lo) && n <= parseFloat(hi));
+    if (!inRange) {
+      throw new Error(
+        `extension "${ext.name}" stage "${s.slug}" number ${s.number} (phase ${s.phase}) ` +
+          `is outside its claimed range(s) ${JSON.stringify(ranges)}`,
+      );
+    }
+    for (const art of s.produces ?? []) {
+      if (!art.startsWith(`${ext.name}-`)) {
+        throw new Error(
+          `extension "${ext.name}" stage "${s.slug}" produces "${art}" — bundle artifacts ` +
+            `must be prefixed "${ext.name}-"`,
+        );
+      }
+    }
+  }
+}
+
+// Discover + load + validate every extension once; reused by write and check.
+function loadExtensions(): ExtensionManifest[] {
+  const exts = discoverExtensions().map(loadExtension);
+  validateExtensions(exts);
+  return exts;
+}
+
+// ---------------------------------------------------------------------------
 // write mode: regenerate dist/<name> in place (clean-sweep).
 // ---------------------------------------------------------------------------
-function writeHarness(name: string): void {
+function writeHarness(name: string, exts: ExtensionManifest[]): void {
   const m = loadManifest(name);
   const distDir = join(REPO_ROOT, "dist", name);
   const treeRoot = join(distDir, m.harnessDir);
-  // Clean sweep the harness dir so removed core files don't linger. Compile is
-  // seedless now (number + name are authored frontmatter), so nothing needs to
-  // survive the sweep.
+  const extDir = join(distDir, "extensions");
+  // Clean sweep the harness dir AND the committed extension deltas so removed
+  // core/bundle files don't linger. Compile is seedless (number + name are
+  // authored frontmatter), so nothing needs to survive the sweep.
   if (existsSync(treeRoot)) rmSync(treeRoot, { recursive: true, force: true });
+  if (existsSync(extDir)) rmSync(extDir, { recursive: true, force: true });
   buildTree(m, distDir);
   console.log(`[${name}] regenerated dist/${name}/${m.harnessDir}`);
+
+  // Project each bundle as a committed delta under dist/<name>/extensions/<bundle>/.
+  // The delta keys are install-root-relative (.claude/..., .agents/...), so a user
+  // overlays the bundle dir onto their install root.
+  if (exts.length > 0) {
+    const baseFiles = readTree(distDir); // base just written (harness dir only; no extensions/ yet)
+    for (const ext of exts) {
+      const delta = buildBundleDelta(m, ext, baseFiles);
+      const bundleRoot = join(extDir, ext.name);
+      for (const [rel, bytes] of delta) {
+        const out = join(bundleRoot, rel);
+        mkdirSync(dirname(out), { recursive: true });
+        writeFileSync(out, bytes);
+      }
+      console.log(`[${name}] bundle "${ext.name}": ${delta.size} delta file(s)`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // check mode: build into a temp dir, diff byte-for-byte vs committed dist/<name>.
 // ---------------------------------------------------------------------------
-function checkHarness(name: string): string[] {
+function checkHarness(name: string, exts: ExtensionManifest[]): string[] {
   const m = loadManifest(name);
   const committed = join(REPO_ROOT, "dist", name, m.harnessDir);
   const tmp = mkdtempSync(join(tmpdir(), `aidlc-pkg-${name}-`));
@@ -364,6 +594,38 @@ function checkHarness(name: string): string[] {
         if (!committedEmitSet.has(rel)) problems.push(`ORPHAN in dist: ${name}/${rel}`);
       }
     }
+    // Bundle deltas live at dist/<name>/extensions/<bundle>/ — a sibling of the
+    // harness dir and .agents/, so the base scans above never touch them. Rebuild
+    // each delta and byte-compare it against the committed bundle dir (MISSING /
+    // DIFFERS / ORPHAN), giving true byte-pinning of every committed delta file.
+    if (exts.length > 0) {
+      const baseFiles = readTree(committed); // committed base = the reference for the diff
+      // Re-key base files to install-root-relative (<harnessDir>/...) to match delta keys.
+      const baseByInstallRel = new Map<string, Buffer>();
+      for (const [rel, bytes] of baseFiles) baseByInstallRel.set(join(m.harnessDir, rel), bytes);
+      // Out-of-harness committed emit files (e.g. .agents/...) are also valid base.
+      for (const rel of committedEmitSet) {
+        const p = join(committedDistRoot, rel);
+        if (existsSync(p)) baseByInstallRel.set(rel, readFileSync(p));
+      }
+      for (const ext of exts) {
+        const delta = buildBundleDelta(m, ext, baseByInstallRel);
+        const bundleRoot = join(committedDistRoot, "extensions", ext.name);
+        for (const [rel, bytes] of delta) {
+          const cp = join(bundleRoot, rel);
+          if (!existsSync(cp)) problems.push(`MISSING in dist: ${name}/extensions/${ext.name}/${rel}`);
+          else if (!readFileSync(cp).equals(bytes))
+            problems.push(`DIFFERS: ${name}/extensions/${ext.name}/${rel}`);
+        }
+        // Committed → rebuilt: ORPHAN.
+        if (existsSync(bundleRoot)) {
+          for (const f of walk(bundleRoot)) {
+            const rel = relative(bundleRoot, f);
+            if (!delta.has(rel)) problems.push(`ORPHAN in dist: ${name}/extensions/${ext.name}/${rel}`);
+          }
+        }
+      }
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -394,10 +656,17 @@ if (argv[0] === "codex" && argv[1] === "trust") {
 }
 
 const check = argv.includes("--check");
+// --no-extensions: build/check the base only (escape hatch for base-parity
+// debugging). Does NOT touch committed dist/<name>/extensions/.
+const withExtensions = !argv.includes("--no-extensions");
 const named = argv.find((a) => !a.startsWith("--"));
 // Default targets are DISCOVERED from harness/ (one manifest = one harness); a
 // named target builds just that one.
 const targets = named ? [named] : discoverHarnessNames();
+
+// Discover + validate bundles once (deps + cross-bundle range overlaps). Empty
+// when extensions/ is absent or --no-extensions is set.
+const extensions = withExtensions ? loadExtensions() : [];
 
 // Only build harnesses that actually have a manifest. Discovery already
 // guarantees this, so the filter only matters for an explicit named target that
@@ -408,7 +677,7 @@ if (absent.length > 0) console.log(`(skipping harness(es) without a manifest: ${
 
 if (check) {
   let problems: string[] = [];
-  for (const n of present) problems = problems.concat(checkHarness(n));
+  for (const n of present) problems = problems.concat(checkHarness(n, extensions));
   if (problems.length > 0) {
     console.error(`\npackage --check FAILED (${problems.length} problem(s)):`);
     for (const p of problems.slice(0, 40)) console.error("  " + p);
@@ -416,5 +685,5 @@ if (check) {
   }
   console.log("package --check: all harness trees in sync with core/ + harness/.");
 } else {
-  for (const n of present) writeHarness(n);
+  for (const n of present) writeHarness(n, extensions);
 }

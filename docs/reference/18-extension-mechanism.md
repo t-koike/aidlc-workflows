@@ -1,10 +1,28 @@
 # Extension Mechanism — Design
 
-> **Status:** Design proposal. Not yet implemented. This document specifies a
-> first-class extension mechanism for AIDLC v2 so that third parties can ship
-> **bundles** — self-contained sets of stages, agents, scopes, rules, sensors,
-> and _contributions to existing stages_ — without editing `core/` or
-> hand-editing any generated `dist/` artifact.
+> **Status:** Layers 0–3 implemented; Layers 4–5 + §4/§5 still design. This
+> document specifies a first-class extension mechanism for AIDLC v2 so that third
+> parties can ship **bundles** — self-contained sets of stages, agents, scopes,
+> rules, sensors, and _contributions to existing stages_ — without editing
+> `core/` or hand-editing any generated `dist/` artifact.
+>
+> **As-built (Layers 0–3):** Layer 0 (authored `number`/`name`, seedless compile)
+> and Layer 1 (`bundle:` ownership field + `bundleOf()`) shipped. Layer 2/3 ships
+> as: an extension lives in `extensions/<name>/` with an `extension.ts` manifest
+> (`scripts/extension-types.ts`), discovered like a harness (`discoverExtensions`
+> in `scripts/package.ts`). The packager projects each bundle as a **committed
+> delta** at `dist/<name>/extensions/<bundle>/` — computed as
+> _diff(base+bundle build, base build)_: the bundle's subtrees are merged into the
+> core roots in a temp tree so the single-root loaders see them at compile, and
+> only the NEW/DIFFERING files are kept. The base trees stay byte-identical (so the
+> 32-stage/13-agent base pins are untouched), and `package.ts --check` byte-pins
+> every delta. The delta sits at the install root (a sibling of `.claude`/`.codex`/
+> `.agents`), keyed install-root-relative, so a user overlays the bundle dir onto
+> their install — and codex's out-of-harness `.agents/skills/` runner is captured
+> by the same diff with **no** emit() change. Activation is via the existing scope
+> grid (a bundle stage gated `scopes: [enterprise]`); the dedicated `when:`
+> predicate (Layer 4) and the per-stage contribution seam (§4) are not yet built.
+> Fixture: `extensions/ops-min/`.
 
 ## 1. Context — why this is being built
 
