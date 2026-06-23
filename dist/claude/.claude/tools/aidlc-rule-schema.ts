@@ -27,6 +27,9 @@ export interface RuleFrontmatter {
   // Compile-time check is shape-only; sensor cross-validation happens
   // at doctor time (separate concern, separate code path).
   pairing?: string;
+  // bundle: ownership identity (extension mechanism, Layer 1). Present only
+  // when authored; absent means core. Read via bundleOf() (lib.ts).
+  bundle?: string;
 }
 
 // parseRuleFrontmatter — extract YAML frontmatter from a rule-file body.
@@ -53,6 +56,9 @@ export function parseRuleFrontmatter(raw: string): RuleFrontmatter {
 
   const pairing = scalarField(fm, "pairing");
   if (pairing !== "") obj.pairing = pairing;
+
+  const bundle = scalarField(fm, "bundle");
+  if (bundle !== "") obj.bundle = bundle;
 
   return obj;
 }

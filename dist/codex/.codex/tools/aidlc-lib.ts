@@ -32,6 +32,25 @@ export interface StageEntry {
   inputs?: string;
   outputs?: string;
   for_each?: string;
+  // Ownership identity (extension mechanism, Layer 1). Present only when the
+  // stage authored it; absent means core. Read via bundleOf().
+  bundle?: string;
+}
+
+// The default bundle for any config item that doesn't declare one. Every
+// stage/agent/scope/rule/sensor belongs to a bundle; absence means it ships in
+// the framework core. Kept as a named constant so later layers (packaging,
+// drift, contribution merge) compare against one source of truth.
+export const CORE_BUNDLE = "core";
+
+/** Resolve the owning bundle of any config item. Absent/empty `bundle` →
+ *  "core". This is the single read-time defaulter: the value is NEVER stored or
+ *  emitted as "core" (the compiled JSON and the round-trip emitter skip an
+ *  absent field), so a core item stays byte-identical while still having a
+ *  well-defined owner when code asks. */
+export function bundleOf(item: { bundle?: string } | null | undefined): string {
+  const b = item?.bundle;
+  return typeof b === "string" && b.length > 0 ? b : CORE_BUNDLE;
 }
 
 export interface ScopeDefinition {
@@ -906,6 +925,9 @@ interface ScopeMetadata {
   description: string;
   keywords: string[];
   testStrategy?: string;
+  // Ownership identity (extension mechanism, Layer 1). Present only when
+  // authored; absent means core. Read via bundleOf().
+  bundle?: string;
 }
 
 let _scopeMetadata: Record<string, ScopeMetadata> | null = null;
@@ -965,6 +987,8 @@ export function loadScopeMetadata(): Record<string, ScopeMetadata> {
     };
     const ts = scalarField(fm, "testStrategy");
     if (ts) meta.testStrategy = ts;
+    const bundle = scalarField(fm, "bundle");
+    if (bundle) meta.bundle = bundle;
     out[name] = meta;
   }
   _scopeMetadata = out;
@@ -1064,6 +1088,9 @@ export interface AgentMetadata {
   slug: string;
   display_name: string;
   examples: string[];
+  // Ownership identity (extension mechanism, Layer 1). Present only when
+  // authored; absent means core. Read via bundleOf().
+  bundle?: string;
 }
 
 const AGENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "agents");
@@ -1089,6 +1116,7 @@ function parseAgentFrontmatter(path: string): AgentMetadata {
   const slug = scalarField(fm, "name");
   const display_name = scalarField(fm, "display_name");
   const examples = listField(fm, "examples");
+  const bundle = scalarField(fm, "bundle");
 
   const missing: string[] = [];
   if (!slug) missing.push("name");
@@ -1098,7 +1126,11 @@ function parseAgentFrontmatter(path: string): AgentMetadata {
       `Agent file ${path} missing required frontmatter: ${missing.join(", ")}`
     );
   }
-  return { slug, display_name, examples };
+  // bundle stored only when authored — keeps the designer-export golden
+  // byte-identical for core agents (which declare none). bundleOf() defaults.
+  const meta: AgentMetadata = { slug, display_name, examples };
+  if (bundle) meta.bundle = bundle;
+  return meta;
 }
 
 // Scalar field parser. Rejects YAML folded/literal block markers
@@ -1455,6 +1487,7 @@ export function emitStageFrontmatter(obj: Record<string, unknown>): string {
     "slug",
     "number",
     "name",
+    "bundle",
     "phase",
     "execution",
     "condition",

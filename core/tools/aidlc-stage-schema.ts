@@ -22,6 +22,12 @@ export interface StageFrontmatter {
   // name — the authored human-readable display name. Same optionality contract
   // as `number`: shape-checked when present, presence enforced at compile.
   name?: string;
+  // bundle — ownership identity (extension mechanism, Layer 1). Optional;
+  // absent means the item belongs to core (read via bundleOf() in lib.ts, which
+  // defaults absent → "core"). Stored only when authored, so core stages — which
+  // never declare it — keep their compiled node byte-identical. Later layers
+  // (packaging variants, drift, contribution merge) key off this.
+  bundle?: string;
   phase: "initialization" | "ideation" | "inception" | "construction" | "operation";
   execution: "ALWAYS" | "CONDITIONAL";
   condition: string;
@@ -122,7 +128,7 @@ const REQUIRED_FIELDS = [
 // stages. Keeping them optional here preserves the validator's minimal-fixture
 // contract (a unit fixture need not carry display metadata to be structurally
 // valid) while compile still fails loud for a real stage that forgets them.
-const OPTIONAL_FIELDS = ["number", "name", "for_each", "sensors", "scopes", "reviewer", "reviewer_max_iterations"] as const;
+const OPTIONAL_FIELDS = ["number", "name", "bundle", "for_each", "sensors", "scopes", "reviewer", "reviewer_max_iterations"] as const;
 
 const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 
@@ -194,6 +200,10 @@ export function validateStageFrontmatter(
   checkString(o, "number", errors);
   checkSlugPattern(o, "number", NUMBER_RE, "<phase-prefix>.<index>", errors);
   checkString(o, "name", errors);
+
+  // bundle — optional ownership tag. String when present; no enum (bundle names
+  // are an open set, validated against discovered extensions at a later layer).
+  checkString(o, "bundle", errors);
 
   checkString(o, "phase", errors);
   checkEnum(o, "phase", VALID_PHASES, errors);

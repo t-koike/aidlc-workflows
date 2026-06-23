@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.4] - 2026-06-23
+
+Adds an optional `bundle:` ownership field to every config type — stages, agents, scopes, rules, and sensors (Layer 1 of the extension mechanism, see `docs/reference/18-extension-mechanism.md`). The field tags which bundle a config item belongs to; absent means the framework core. Nothing reads it for behaviour yet — it is the identity hook later layers (packaging variants, drift, per-stage contribution merge) key off. Compiled output is byte-identical to 2.0.3: the value is stored only when authored, so no core item — none of which declare it — changes its compiled node, scope grid, or designer-export entry. Re-copy your `dist/<harness>/` to pick up the regenerated tools.
+
+* **New optional frontmatter field `bundle:`** is accepted on stage, agent, scope, rule, and sensor files. On stages it is shape-checked (string) by `validateStageFrontmatter`; the other four loaders tolerate it like any other optional field. Authoring `bundle:` on a core file is allowed but pointless until later layers consume it.
+* **`bundleOf(item)` + `CORE_BUNDLE`** (exported from `aidlc-lib.ts`) are the single read-time defaulter: an item with no `bundle` resolves to `"core"`. The value is never stored or emitted as `"core"`, so byte parity holds.
+* No new commands or flags; no runtime behaviour change.
+
 ## [2.0.3] - 2026-06-23
 
 Makes stage `number` and `name` **authored frontmatter** instead of values seeded from the committed `stage-graph.json`. The compile step (`aidlc-graph compile`) now derives the entire stage graph from `core/` sources alone — it no longer reads the prior JSON for a number/name seed, and the packager no longer stashes/restores that seed across a build. This removes the long-standing requirement to hand-edit a generated file when adding a stage: drop a stage `.md` with an authored `number` + `name` and recompile. Compiled output is byte-identical to 2.0.2 — every shipped stage was migrated to carry the values it already had. Re-copy your `dist/<harness>/` to pick up the regenerated tools. Foundation for the extension mechanism (see `docs/reference/18-extension-mechanism.md`).

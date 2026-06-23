@@ -247,6 +247,7 @@ const FIELD_ORDER = [
   "slug",
   "number",
   "name",
+  "bundle",
   "phase",
   "execution",
   "condition",
@@ -1204,6 +1205,11 @@ function buildGraphStage(
   };
   if (parsed.condition !== undefined) {
     stage.condition = parsed.condition;
+  }
+  // bundle — stored only when authored, so a core stage (which declares none)
+  // emits a byte-identical node. Read-time defaulting to "core" is bundleOf().
+  if (parsed.bundle !== undefined) {
+    stage.bundle = parsed.bundle;
   }
   if (parsed.for_each !== undefined) {
     stage.for_each = parsed.for_each;

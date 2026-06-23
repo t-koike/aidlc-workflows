@@ -38,6 +38,9 @@ export interface SensorManifest {
   output_schema?: Record<string, unknown>;
   timeout_seconds?: number;
   matches?: string;
+  // bundle: ownership identity (extension mechanism, Layer 1). Present only
+  // when authored; absent means core. Read via bundleOf() (lib.ts).
+  bundle?: string;
 }
 
 const REQUIRED_FIELDS = [
@@ -78,6 +81,8 @@ export function parseSensorManifest(raw: string): SensorManifest {
   if (category !== "") obj.category = category;
   const matches = scalarField(fm, "matches");
   if (matches !== "") obj.matches = matches;
+  const bundle = scalarField(fm, "bundle");
+  if (bundle !== "") obj.bundle = bundle;
   const timeout = scalarField(fm, "timeout_seconds");
   if (timeout !== "") {
     const n = parseInt(timeout, 10);
