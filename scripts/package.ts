@@ -50,6 +50,13 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { DirMap, HarnessManifest } from "./manifest-types.ts";
 import type { ExtensionManifest } from "./extension-types.ts";
+import {
+  parseContribution,
+  validateContribution,
+  type Contribution,
+  type Fragment,
+} from "./contribution-schema.ts";
+import { emitStageFrontmatter, parseStageFrontmatter } from "../core/tools/aidlc-lib.ts";
 import { renderOnboarding } from "./onboarding.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -170,7 +177,165 @@ function copyCoreDirs(
   }
 }
 
-function buildTree(m: HarnessManifest, outRoot: string, extraDirs: DirMap[] = []): string[] {
+// --- §4 per-stage contribution merge ---
+
+// Union a contribution's string-list `adds` into a parsed frontmatter array,
+// deduping and appending new entries in sorted order (deterministic so the
+// re-emitted .md + recompiled graph are byte-reproducible).
+function unionList(base: unknown, add: string[]): string[] {
+  const out: string[] = Array.isArray(base) ? base.map(String) : [];
+  const have = new Set(out);
+  for (const v of [...add].sort()) if (!have.has(v)) { out.push(v); have.add(v); }
+  return out;
+}
+
+// Splice fragment prose into a stage body at a fragment anchor. Anchors:
+//   after-step:<n>  → before the next "### " heading (or next "## " H2) after Step n
+//   before-step:<n> → immediately before "### Step <n>"
+//   end-of-steps    → before the first "## " H2 that follows the "## Steps" block
+function spliceFragment(body: string, frag: Fragment): string {
+  const lines = body.split("\n");
+  const block = ["", frag.body, ""]; // blank-line padded
+  const insertAt = (idx: number): string =>
+    [...lines.slice(0, idx), ...block, ...lines.slice(idx)].join("\n");
+
+  const stepRe = (n: number) => new RegExp(`^###\\s+Step\\s+${n}\\b`);
+  const m = frag.anchor.match(/^(after-step|before-step):(\d+)$/);
+  if (m) {
+    const n = parseInt(m[2], 10);
+    const stepIdx = lines.findIndex((l) => stepRe(n).test(l.trim()));
+    if (stepIdx === -1) throw new Error(`fragment anchor "${frag.anchor}": no "### Step ${n}" in target body`);
+    if (m[1] === "before-step") return insertAt(stepIdx);
+    // after-step: insert before the next ### or ## after this step
+    for (let i = stepIdx + 1; i < lines.length; i++) {
+      if (/^###\s/.test(lines[i]) || /^##\s/.test(lines[i])) return insertAt(i);
+    }
+    return insertAt(lines.length);
+  }
+  if (frag.anchor === "end-of-steps") {
+    const stepsIdx = lines.findIndex((l) => l.trim() === "## Steps");
+    const from = stepsIdx === -1 ? 0 : stepsIdx + 1;
+    for (let i = from; i < lines.length; i++) {
+      if (/^##\s/.test(lines[i])) return insertAt(i);
+    }
+    return insertAt(lines.length);
+  }
+  throw new Error(`fragment anchor "${frag.anchor}" unsupported`);
+}
+
+// Merge all active bundles' contributions into the copied core stage .md files in
+// the temp tree, BEFORE compile. No-op when `exts` is empty (the base build), so
+// base trees stay byte-identical. For each target stage: union the structural
+// `adds` into frontmatter, set required_sections, splice ordered fragments into
+// the body, re-emit. Throws on an invalid contribution or a fragment conflict.
+function mergeContributions(
+  treeRoot: string,
+  harnessDir: string,
+  rulesRename: string | null,
+  exts: ExtensionManifest[],
+): void {
+  if (exts.length === 0) return;
+  const stagesRoot = join(treeRoot, "aidlc-common", "stages");
+  if (!existsSync(stagesRoot)) return;
+
+  // Known core stage slugs (for target validation) = stem of every copied stage .md.
+  const coreSlugs = new Set<string>();
+  for (const f of walk(stagesRoot)) if (f.endsWith(".md")) coreSlugs.add(basenameNoExt(f));
+
+  // Collect contributions grouped by (phase/target → list).
+  type Loaded = { c: Contribution; phase: string };
+  const byTarget = new Map<string, Loaded[]>();
+  for (const ext of exts) {
+    const overlays = ext.contributes.overlays;
+    if (!overlays) continue;
+    const root = join(EXTENSIONS_ROOT, ext.name, overlays);
+    if (!existsSync(root)) continue;
+    for (const phase of readdirSync(root)) {
+      const phaseDir = join(root, phase);
+      if (!statSync(phaseDir).isDirectory()) continue;
+      for (const f of readdirSync(phaseDir).filter((x) => x.endsWith(".md"))) {
+        const raw = readFileSync(join(phaseDir, f), "utf-8");
+        const c = parseContribution(raw);
+        const errs = validateContribution(c, { coreSlugs, bundle: ext.name });
+        if (errs.length > 0) {
+          throw new Error(`contribution ${ext.name}/${overlays}${phase}/${f}: ${errs.join("; ")}`);
+        }
+        const list = byTarget.get(c.target) ?? [];
+        list.push({ c, phase });
+        byTarget.set(c.target, list);
+      }
+    }
+  }
+  if (byTarget.size === 0) return;
+
+  for (const [target, loaded] of byTarget) {
+    // Locate the copied core stage file (search phases under the temp tree).
+    let stageFile: string | null = null;
+    for (const phase of readdirSync(stagesRoot)) {
+      const cand = join(stagesRoot, phase, `${target}.md`);
+      if (existsSync(cand)) { stageFile = cand; break; }
+    }
+    if (!stageFile) throw new Error(`contribution target "${target}" not found in stages tree`);
+
+    const raw = readFileSync(stageFile, "utf-8");
+    const fmMatch = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+    const body = fmMatch ? raw.slice(fmMatch[0].length) : raw;
+    const parsed = parseStageFrontmatter(raw) as Record<string, unknown>;
+
+    // Structural set-union across all contributions targeting this stage.
+    let mergedBody = body;
+    const fragments: Array<{ frag: Fragment; bundle: string }> = [];
+    for (const { c } of loaded) {
+      if (c.adds.produces.length) parsed.produces = unionList(parsed.produces, c.adds.produces);
+      if (c.adds.sensors.length) parsed.sensors = unionList(parsed.sensors, c.adds.sensors);
+      if (c.adds.requires_stage.length)
+        parsed.requires_stage = unionList(parsed.requires_stage, c.adds.requires_stage);
+      if (c.adds.required_sections.length)
+        parsed.required_sections = unionList(parsed.required_sections, c.adds.required_sections);
+      if (c.adds.consumes.length) {
+        const existing = Array.isArray(parsed.consumes) ? (parsed.consumes as Array<{ artifact: string }>) : [];
+        const have = new Set(existing.map((e) => e.artifact));
+        for (const con of c.adds.consumes) if (!have.has(con.artifact)) { existing.push(con); have.add(con.artifact); }
+        parsed.consumes = existing;
+      }
+      for (const frag of c.fragments) fragments.push({ frag, bundle: c.bundle });
+    }
+
+    // Deterministic fragment order: (order asc, bundle lexical, anchor).
+    fragments.sort(
+      (a, b) =>
+        a.frag.order - b.frag.order ||
+        a.bundle.localeCompare(b.bundle) ||
+        a.frag.anchor.localeCompare(b.frag.anchor),
+    );
+    const seen = new Set<string>();
+    for (const { frag, bundle } of fragments) {
+      const key = `${frag.anchor}|${frag.order}|${bundle}`;
+      if (seen.has(key)) throw new Error(`contribution conflict on ${target}: duplicate fragment ${key}`);
+      seen.add(key);
+      mergedBody = spliceFragment(mergedBody, frag);
+    }
+
+    // Re-emit: merged frontmatter + (token-transformed) merged body. The frontmatter
+    // came from an already-transformed copied file, so re-emit as-is; the fragment
+    // prose is transformed for {{HARNESS_DIR}} + rules-rename.
+    const fm = emitStageFrontmatter(parsed);
+    const transformedBody = transform(stageFile, Buffer.from(mergedBody, "utf-8"), harnessDir, rulesRename).toString("utf-8");
+    writeFileSync(stageFile, `${fm}\n${transformedBody.replace(/^\n+/, "")}`);
+  }
+}
+
+function basenameNoExt(p: string): string {
+  const b = p.slice(p.lastIndexOf("/") + 1);
+  return b.endsWith(".md") ? b.slice(0, -3) : b;
+}
+
+function buildTree(
+  m: HarnessManifest,
+  outRoot: string,
+  extraDirs: DirMap[] = [],
+  exts: ExtensionManifest[] = [],
+): string[] {
   const harnessDir = m.harnessDir;
   const treeRoot = join(outRoot, harnessDir);
 
@@ -188,6 +353,12 @@ function buildTree(m: HarnessManifest, outRoot: string, extraDirs: DirMap[] = []
       writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, m.rulesRename));
     }
   }
+  // 1c. §4 contribution seam (bundle-variant build only — exts is [] for the base
+  //     build, so this is a no-op and base trees stay byte-identical). Splice each
+  //     bundle's contributions into the copied core stage files BEFORE compile, so
+  //     the merged produces/consumes/sensors/required_sections + appended prose
+  //     land in the compiled graph and the stage .md, hence in the committed delta.
+  mergeContributions(treeRoot, harnessDir, m.rulesRename, exts);
 
   // 2. Copy authored harness surfaces (token substitution on .md). projectRoot
   //    files land beside the harness dir (e.g. dist/kiro/AGENTS.md), the rest
@@ -360,6 +531,9 @@ function extensionDirs(ext: ExtensionManifest): DirMap[] {
   const out: DirMap[] = [];
   for (const [key, rel] of Object.entries(ext.contributes)) {
     if (!rel) continue;
+    // overlays is NOT a copy-merge subtree — it is the §4 contribution dir,
+    // consumed by mergeContributions (not copied into a core dst). Skip it here.
+    if (key === "overlays") continue;
     const dst = CONTRIBUTES_DST[key];
     if (!dst) throw new Error(`extension "${ext.name}": unknown contributes key "${key}"`);
     out.push({ src: join(EXTENSIONS_ROOT, ext.name, rel), dst });
@@ -426,7 +600,7 @@ function buildBundleDelta(
 ): Delta {
   const mergedTmp = mkdtempSync(join(tmpdir(), `aidlc-bundle-${m.name}-${ext.name}-`));
   try {
-    const emitWritten = buildTree(m, mergedTmp, extensionDirs(ext));
+    const emitWritten = buildTree(m, mergedTmp, extensionDirs(ext), [ext]);
     // Validate the merged compiled graph: every bundle-owned stage must number
     // inside a claimed range and prefix its produced artifacts with "<bundle>-".
     validateBundleGraph(mergedTmp, m.harnessDir, ext);

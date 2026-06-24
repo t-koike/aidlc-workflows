@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.7] - 2026-06-24
+
+Adds the §4 per-stage contribution seam: an extension can now ADDITIVELY MODIFY an existing core stage — add produces/consumes/sensors, enforce required sections, and append prose step fragments — without editing the core stage file. A contribution lives at `extensions/<bundle>/contributions/<phase>/<slug>.md` (wired via the manifest's `contributes.overlays`); the packager's merge pass splices it into the copied core stage in the bundle-variant build before compile, so the merged stage `.md` + recompiled graph land in the bundle's committed delta. The base `dist/<harness>/` trees stay byte-identical (the merge runs only in the variant build; core stages declare none of the new fields). Re-copy your `dist/<harness>/` to pick up the regenerated tools.
+
+* **Contribution format** (`scripts/contribution-schema.ts`): `target` (core stage slug), `bundle`, `adds:{produces,consumes,sensors,requires_stage,required_sections}`, and `fragments:[{anchor,order}]` whose prose is a `## fragment: <anchor>` body block. Structural `adds` are set-unioned into the stage node; fragments splice into the body at `after-step:<n>` / `before-step:<n>` / `end-of-steps`, ordered by `(order, bundle, anchor)`. Contributed artifacts must be `<bundle>-` prefixed; an unknown target / bad anchor / unprefixed artifact fails the build.
+* **`required_sections` is now an enforced stage field.** The required-sections sensor reads a stage's `required_sections` (passed by the dispatcher as `--required-sections`) and machine-checks each named section is present as a `## ` H2, on top of its ≥2-H2 default. Core stages declare none, so default behavior is unchanged.
+* **`contributes.overlays`** is the new manifest key pointing at the contributions dir; unlike the other `contributes` keys it is consumed by the merge pass, not copied as a subtree.
+* No runtime behaviour change for core; no new commands. `bun scripts/package.ts --check` byte-pins each contribution-modified stage in the bundle delta.
+
 ## [2.0.6] - 2026-06-23
 
 Activates the reserved `when:` stage frontmatter key as a structured activation predicate (Layer 4 of `docs/reference/18-extension-mechanism.md`), implementing `producer-in-plan`. A stage carrying `when: {producer-in-plan: X}` is EXECUTE under a scope only if some stage producing artifact `X` is itself EXECUTE on that scope's resolved plan; otherwise the compile-time grid pass SKIPs it. This promotes the old "producer off-path" advisory into a real EXECUTE/SKIP gate and is a structured replacement for prose `condition:`. Evaluated at compile and baked into `scope-grid.json` — the runtime stays read-only. Core ships no `when:`, so all base compiled artifacts are byte-identical to 2.0.5. Re-copy your `dist/<harness>/` to pick up the regenerated tools.

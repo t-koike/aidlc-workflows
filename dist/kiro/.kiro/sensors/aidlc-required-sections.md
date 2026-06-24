@@ -9,12 +9,14 @@ matches: "**/aidlc-docs/**"
 input_schema:
   output_path: string
   stage_slug: string
+  required_sections: string[]
 output_schema:
   pass: boolean
   h2_count: integer
   headings: string[]
   findings_count: integer
   edge_block: string
+  missing_sections: string[]
 timeout_seconds: 5
 ---
 
@@ -31,11 +33,13 @@ the batch fan-out. The check reports `edge_block` as `ok`, `absent`,
 the malformed block never reaches the compiler. Every other artefact keeps
 the generic H2-count check only.
 
-Per-stage shape can override the default heading set when the stage's
-`## Sensors` body documents the override (post-milestone-12 mechanism). The
-framework ships no per-stage overrides by default — teams introduce
-specific heading shapes via the §13 learning loop when there's a real
-reason.
+Per-stage required sections (§4 extension contributions): when a stage node
+carries `required_sections: [...]` (an extension contributed them onto the
+stage), the dispatcher passes `--required-sections` and this sensor
+MACHINE-ENFORCES that each named section is present as an exact `## <name>`
+H2 — in addition to the ≥2-H2 default. Core stages declare none, so the
+default behavior is unchanged. Missing named sections are reported in
+`missing_sections` and fail the sensor.
 
 ## Failure mode
 

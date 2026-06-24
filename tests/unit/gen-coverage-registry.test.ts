@@ -754,6 +754,7 @@ describe("mechanismsOf is body-derived (milestone 3)", () => {
     "integration/t136.test.ts",
     "integration/t137.test.ts",
     "integration/t145-state-lock-concurrency.test.ts",
+    "integration/t156-contribution-merge.test.ts",
     "integration/t31-help.test.ts",
     "integration/t33-hook-concurrency.test.ts",
     "integration/t39.test.ts",

@@ -272,6 +272,17 @@ function handleFire(args: string[]): void {
 			.filter((a) => typeof a === "string" && a.length > 0);
 		scriptArgs.push("--consumes", consumeSlugs.join(","));
 	}
+	// required-sections additionally takes --required-sections "Sec A,Sec B"
+	// sourced from the GraphStage.required_sections field (§4 contribution
+	// merge). Absent/empty → the sensor keeps its ≥2-H2 default behavior.
+	if (id === "required-sections") {
+		const sections = (stageNode.required_sections ?? []).filter(
+			(s) => typeof s === "string" && s.length > 0,
+		);
+		if (sections.length > 0) {
+			scriptArgs.push("--required-sections", sections.join(","));
+		}
+	}
 
 	// --- 3. Pre-compute detail-file path (used only on FAILED) ---
 	// aidlc-docs/.aidlc-sensors/<stage-slug>/<sensor-id>-<fire-id>.md

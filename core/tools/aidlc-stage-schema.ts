@@ -58,6 +58,10 @@ export interface StageFrontmatter {
   // Open-map-with-known-keys (like consumes[].conditional_on) so a future
   // predicate slots in as one more optional key + one WHEN_PREDICATE_KEYS entry.
   when?: { "producer-in-plan"?: string };
+  // required_sections — named `## ` H2 sections the stage's output must contain,
+  // enforced by the required-sections sensor on top of its ≥2-H2 default. Core
+  // stages declare none; a §4 contribution unions them onto the merged node.
+  required_sections?: string[];
   // reviewer — agent slug to invoke as a quality gate after the stage body
   // (stage-protocol.md §12a). Optional; absent when the stage has no review step.
   reviewer?: string;
@@ -143,7 +147,7 @@ const REQUIRED_FIELDS = [
 // stages. Keeping them optional here preserves the validator's minimal-fixture
 // contract (a unit fixture need not carry display metadata to be structurally
 // valid) while compile still fails loud for a real stage that forgets them.
-const OPTIONAL_FIELDS = ["number", "name", "bundle", "for_each", "sensors", "scopes", "when", "reviewer", "reviewer_max_iterations"] as const;
+const OPTIONAL_FIELDS = ["number", "name", "bundle", "for_each", "sensors", "scopes", "when", "required_sections", "reviewer", "reviewer_max_iterations"] as const;
 
 const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 
@@ -352,6 +356,20 @@ export function validateStageFrontmatter(
       scopes.forEach((name: unknown, i: number) => {
         if (typeof name === "string" && name.length === 0) {
           errors.push(`scopes[${i}] must be non-empty`);
+        }
+      });
+    }
+  }
+
+  // required_sections — optional list of non-empty section names (§4). The
+  // required-sections sensor enforces each as a `## ` H2 in the stage output.
+  if ("required_sections" in o && o.required_sections !== undefined) {
+    checkStringArray(o, "required_sections", errors);
+    const rsVal: unknown = o.required_sections;
+    if (Array.isArray(rsVal)) {
+      (rsVal as unknown[]).forEach((name: unknown, i: number) => {
+        if (typeof name === "string" && name.length === 0) {
+          errors.push(`required_sections[${i}] must be non-empty`);
         }
       });
     }

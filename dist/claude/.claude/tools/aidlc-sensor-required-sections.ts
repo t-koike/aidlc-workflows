@@ -13,11 +13,16 @@ interface Result {
 	// parseBoltDag so a malformed or cyclic DAG fails loud at the 2.7 gate,
 	// upstream of the runtime compiler that reads the same block.
 	edge_block?: "ok" | "absent" | "malformed" | "cyclic";
+	// Named sections (§4) the output was required to contain but is missing.
+	// Populated only when --required-sections is passed (a §4 contribution wired
+	// required_sections onto the stage node). Empty when all present or none required.
+	missing_sections?: string[];
 }
 
 interface Flags {
 	stage?: string;
 	outputPath?: string;
+	requiredSections?: string[];
 }
 
 function parseFlags(argv: string[]): Flags {
@@ -28,6 +33,12 @@ function parseFlags(argv: string[]): Flags {
 			out.stage = argv[++i];
 		} else if (arg === "--output-path") {
 			out.outputPath = argv[++i];
+		} else if (arg === "--required-sections") {
+			// comma-joined section names; split, trim, drop empties.
+			out.requiredSections = (argv[++i] ?? "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
 		}
 	}
 	return out;
@@ -80,6 +91,22 @@ function main(): void {
 	// generically and is sensor-id-agnostic.
 	let findings_count = Math.max(0, 2 - h2_count);
 	const result: Result = { pass, h2_count, headings, findings_count };
+
+	// §4 contribution: when the stage node declares required_sections, each named
+	// section must be present as an exact `## <name>` H2 (in addition to the ≥2
+	// default). `headings` holds full trimmed "## X" lines, so compare against
+	// "## <name>". Missing sections fail the sensor and add to findings.
+	if (flags.requiredSections && flags.requiredSections.length > 0) {
+		const present = new Set(headings);
+		const missing = flags.requiredSections.filter(
+			(name) => !present.has(`## ${name}`),
+		);
+		result.missing_sections = missing;
+		if (missing.length > 0) {
+			pass = false;
+			findings_count += missing.length;
+		}
+	}
 
 	// Filename-gated extension (units-generation 2.7): unit-of-work-dependency.md
 	// must carry the required fenced ```yaml units: edge block beside its prose.

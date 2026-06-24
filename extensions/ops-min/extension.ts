@@ -10,7 +10,10 @@ const extension: ExtensionManifest = {
   requiresBundle: ["core"],
   // Claim the high operation range (core operation stages are 4.1–4.7).
   numberRanges: { operation: [["4.50", "4.99"]] },
-  contributes: { stages: "stages/" },
+  // stages/ ships NEW stages; contributions/ (overlays) additively modifies an
+  // EXISTING core stage (§4 — adds an operational-NFR artifact + required section
+  // + a step to construction/nfr-requirements).
+  contributes: { stages: "stages/", overlays: "contributions/" },
 };
 
 export default extension;

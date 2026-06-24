@@ -1529,7 +1529,8 @@
       "security-requirements",
       "scalability-requirements",
       "reliability-requirements",
-      "tech-stack-decisions"
+      "tech-stack-decisions",
+      "ops-min-operational-nfr-requirements"
     ],
     "consumes": [
       {
@@ -1559,6 +1560,9 @@
       "upstream-coverage",
       "linter",
       "type-check"
+    ],
+    "required_sections": [
+      "Operational NFRs"
     ],
     "scopes": [
       "enterprise",

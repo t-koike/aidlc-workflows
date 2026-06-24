@@ -20,9 +20,12 @@
 > `.agents`), keyed install-root-relative, so a user overlays the bundle dir onto
 > their install — and codex's out-of-harness `.agents/skills/` runner is captured
 > by the same diff with **no** emit() change. Activation is via the existing scope
-> grid (a bundle stage gated `scopes: [enterprise]`); the dedicated `when:`
-> predicate (Layer 4) and the per-stage contribution seam (§4) are not yet built.
-> Fixture: `extensions/ops-min/`.
+> grid (a bundle stage gated `scopes: [enterprise]`) plus the `when:`
+> `producer-in-plan` predicate (Layer 4). The per-stage contribution seam (§4) is
+> also implemented: a bundle additively modifies an existing core stage via
+> `extensions/<bundle>/contributions/<phase>/<slug>.md` (wired by
+> `contributes.overlays`), merged before compile. Fixture: `extensions/ops-min/`
+> (new stages, a `when` gate, and a contribution to `construction/nfr-requirements`).
 
 ## 1. Context — why this is being built
 
@@ -264,12 +267,29 @@ the `13` in `t01`/`t61`/`t66`) with one computed-from-source roster partitioned
 by bundle: "core ships exactly N (frozen); each bundle exactly M." This also
 fixes the existing 11-vs-13 drift by giving counts a single source.
 
-## 4. The per-stage contribution seam (the core of "modify existing stages")
+## 4. The per-stage contribution seam (the core of "modify existing stages") — IMPLEMENTED
 
 A **contribution** (a.k.a. overlay) is a file shipped by a bundle that declares
 _additive deltas_ to a named existing stage. It lives at
 `extensions/<bundle>/contributions/<phase>/<slug>.md` and never edits the base
 stage.
+
+**As-built (v2.0.7)** — three deltas from the sketch below:
+- **Hyphen namespace, not slash.** Contributed artifacts are `<bundle>-` prefixed
+  (`ARTIFACT_SLUG_RE` forbids `/`), e.g. `ops-min-operational-nfr-requirements`.
+- **No `when` on contributions.** A contribution is active iff its bundle's
+  variant is being built (the merge only runs then), so `bundle-active` is
+  implicit; a `when:` key is parsed-but-ignored.
+- **Fragment anchors** are `after-step:<n>` / `before-step:<n>` / `end-of-steps`
+  (no dedicated `questions` anchor — questions are authored as a step fragment);
+  each fragment's prose is a `## fragment: <anchor>` body block in the
+  contribution file. The merge (`mergeContributions` in `scripts/package.ts`)
+  set-unions `adds.{produces,consumes,sensors,requires_stage,required_sections}`
+  into the stage node and splices fragments ordered by `(order, bundle, anchor)`,
+  all before compile, so the result lands in the bundle's committed delta.
+  Contributed `required_sections` are machine-enforced by the required-sections
+  sensor (it reads the node's `required_sections` via `--required-sections`).
+  Parser/validator: `scripts/contribution-schema.ts`.
 
 ```yaml
 ---

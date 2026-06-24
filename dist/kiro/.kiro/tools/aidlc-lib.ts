@@ -40,6 +40,12 @@ export interface StageEntry {
   // when-bearing stages without the compiled grid). The grid is the runtime
   // source of truth for EXECUTE/SKIP.
   when?: { "producer-in-plan"?: string };
+  // Required output sections (extension mechanism, §4). Named `## ` H2 sections
+  // a contribution requires the stage's output to contain — the required-sections
+  // sensor enforces them in addition to its ≥2-H2 default. Core stages declare
+  // none (absent → emitter skips it → base byte-clean); a bundle contribution
+  // unions them onto the merged node.
+  required_sections?: string[];
 }
 
 // The default bundle for any config item that doesn't declare one. Every
@@ -1240,6 +1246,10 @@ export function parseStageFrontmatter(
     "sensors",
     "scopes",
   ]);
+  // Optional list fields parsed ONLY when present (unlike ARRAY_KEYS, which are
+  // always materialized as [] for required-field presence). Keeping these
+  // present-only means a core stage that omits them emits nothing → byte-clean.
+  const OPTIONAL_LIST_KEYS = new Set(["required_sections"]);
   const CONSUMES_KEY = "consumes";
   const WHEN_KEY = "when";
 
@@ -1247,6 +1257,11 @@ export function parseStageFrontmatter(
     if (key === CONSUMES_KEY) continue;
     if (key === WHEN_KEY) continue; // nested map — parsed by objectField below
     if (ARRAY_KEYS.has(key)) continue;
+    if (OPTIONAL_LIST_KEYS.has(key)) {
+      // present (in topLevelKeys) → parse as a list; absent → never reached.
+      obj[key] = listField(fm, key);
+      continue;
+    }
     // The key was discovered at the start of some line, so it IS
     // present. scalarField returns "" for both absent AND empty-quoted
     // ("") — since we know it's present, assign the result
@@ -1523,6 +1538,7 @@ export function emitStageFrontmatter(obj: Record<string, unknown>): string {
     "consumes",
     "requires_stage",
     "sensors",
+    "required_sections",
     "scopes",
     "when",
     "inputs",

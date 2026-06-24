@@ -124,6 +124,9 @@ export interface GraphStage extends StageEntry {
   // into the compiled scope-grid (applyPredicates) at compile — the grid, not
   // this field, is the runtime EXECUTE/SKIP source of truth.
   when?: { "producer-in-plan"?: string };
+  // required_sections — named H2 sections the required-sections sensor enforces
+  // (§4). Present only when a contribution added them; core stages have none.
+  required_sections?: string[];
   inputs: string;
   outputs: string;
   for_each?: string;
@@ -266,6 +269,7 @@ const FIELD_ORDER = [
   "consumes",
   "requires_stage",
   "sensors",
+  "required_sections",
   "scopes",
   "when",
   "reviewer",
@@ -1293,6 +1297,9 @@ function buildGraphStage(
   }
   if (parsed.when !== undefined) {
     stage.when = parsed.when;
+  }
+  if (parsed.required_sections !== undefined) {
+    stage.required_sections = parsed.required_sections;
   }
   if (parsed.reviewer !== undefined) {
     stage.reviewer = parsed.reviewer;

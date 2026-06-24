@@ -32,10 +32,13 @@ export type ExtensionContributes = {
   rules?: string;
   sensors?: string;
   knowledge?: string;
-  // overlays?: string;
-  //   The per-stage contribution seam (§4 of the design doc) — additive deltas to
-  //   EXISTING stage bodies/frontmatter. RESERVED: not implemented in Layer 2/3,
-  //   which ships only the additive NEW-files path.
+  // overlays — the per-stage contribution seam (§4): a dir of contribution files
+  // (contributions/<phase>/<slug>.md) that additively modify EXISTING stages
+  // (add produces/consumes/sensors/required_sections + append prose fragments).
+  // UNLIKE the other keys, this is NOT a subtree copy-merged into a core dst dir
+  // — it is consumed by mergeContributions (package.ts) before compile. So
+  // extensionDirs() must SKIP it.
+  overlays?: string;
 };
 
 /**
