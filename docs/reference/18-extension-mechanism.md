@@ -350,7 +350,19 @@ already runs (`compileStageGraph`, around `aidlc-graph.ts:1117`). Merge rules:
 ## 5. Multi-tenant guards (safe for independent authors)
 
 Single-author additive is easy. Independent authors who never coordinate need
-four guards that do not exist today.
+the guards below.
+
+**As-built (v2.0.8):** §5.1 (artifact + number-range namespacing), §5.2
+(deterministic fragment ordering), §5.3 (cross-bundle conflict attribution), and
+§5.4 (semver `requiresBundle` + dependency ordering) are **implemented** in
+`scripts/extension-validate.ts` (`validateExtensionSet`, `orderByDeps`,
+`satisfiesSemver`), run on every build and exposed standalone via
+`bun scripts/package.ts --validate-ext`. Two deltas from the sketch below:
+namespacing is a **hyphen prefix** `<bundle>-` (not slash — `ARTIFACT_SLUG_RE`
+forbids `/`), enforced by a collision check across the merged registry rather
+than a regex change; and conflict attribution is a dedicated cross-bundle pass
+(manifests + contributions + the core artifact set), not an extension of
+`validateScope`.
 
 ### 5.1 Namespacing (artifacts + number ranges)
 

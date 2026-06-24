@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.8] - 2026-06-24
+
+Adds extension author tooling and multi-tenant (cross-bundle) validation
+(issue #430 workstreams A + C). No runtime behaviour change; core trees stay byte-identical.
+
+* **`bun scripts/package.ts --validate-ext [<name>]`** — a standalone author check that validates one bundle (or all discovered) WITHOUT a full harness build: manifest load, cross-bundle set checks, and every contribution file (target resolves, anchors valid, artifacts namespaced). Prints a per-error list and exits non-zero on any problem. Fast iteration loop for extension authors.
+* **Cross-bundle validation** now runs on every build and in `--validate-ext` (new `scripts/extension-validate.ts`): `requiresBundle` is enforced with semver (`name@^1.2.0` / `~` / exact) against the dependency's `version`; dependency cycles are rejected; number-range overlaps and artifact-namespace collisions (a bundle artifact must be `<bundle>-` prefixed and must not collide with a core artifact or another bundle's) are reported with bundle attribution. Bundles are now applied in dependency order.
+* **Author guide:** new `docs/harness-engineering/10-authoring-an-extension.md` walks the `extensions/ops-min/` fixture end to end (manifest, new stage, `when` gate, contribution, the validate loop).
+
 ## [2.0.7] - 2026-06-24
 
 Adds the §4 per-stage contribution seam: an extension can now ADDITIVELY MODIFY an existing core stage — add produces/consumes/sensors, enforce required sections, and append prose step fragments — without editing the core stage file. A contribution lives at `extensions/<bundle>/contributions/<phase>/<slug>.md` (wired via the manifest's `contributes.overlays`); the packager's merge pass splices it into the copied core stage in the bundle-variant build before compile, so the merged stage `.md` + recompiled graph land in the bundle's committed delta. The base `dist/<harness>/` trees stay byte-identical (the merge runs only in the variant build; core stages declare none of the new fields). Re-copy your `dist/<harness>/` to pick up the regenerated tools.
@@ -296,7 +305,7 @@ Normalizes the path strings the compiled stage graph records for rules and senso
 * **An autonomous build swarm.** After you grant Construction autonomy, eligible independent build units fan out in parallel (across isolated worktrees) and converge behind a deterministic referee that re-verifies every unit before merge — a unit that fails, or is falsely claimed converged, returns the baton to you. Set `AIDLC_USE_SWARM=1` to drive the fan-out with an inline workflow; unset it for the parallel-subagent floor.
 * **Skill-picker discoverability.** Every `/aidlc-*` runner surfaces in Claude Code's `/` picker, no manual registration.
 
-**For harness engineers and contributors**
+### For harness engineers and contributors
 
 * **Scope is a file-authored primitive.** A scope is a `.claude/scopes/aidlc-<name>.md` file (identity) plus a `scopes:` tag on each member stage (membership), transposed at compile into `scope-grid.json`. The `scope-mapping.json` data file is removed; adding a scope is now purely additive, no code edit.
 * **Runners are generated, not hand-written.** `aidlc-runner-gen.ts` emits a runner per runnable stage and per shipped scope from the compiled graph; drift guards fail CI if the on-disk set diverges. "To add a stage, write a stage file" then regenerate — the runner follows.

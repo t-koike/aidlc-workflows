@@ -174,6 +174,10 @@ Read it in order the first time:
 9. **[Porting to a New Harness](09-porting-to-a-new-harness.md)** — add another
    CLI harness with one `harness/<name>/` directory and a manifest row, no
    `core/` edits: the manifest contract, the hook adapter, and `emit.ts`.
+10. **[Authoring an Extension](10-authoring-an-extension.md)** — package a
+    reusable, optional **bundle** in `extensions/<name>/`: add new stages/agents,
+    gate them with `when:`, and additively modify existing core stages via
+    contributions — all projected as a drift-guarded delta, no `core/` edits.
 
 ## Next
 

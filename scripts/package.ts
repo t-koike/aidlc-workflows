@@ -56,6 +56,12 @@ import {
   type Contribution,
   type Fragment,
 } from "./contribution-schema.ts";
+import {
+  coreArtifactsFrom,
+  orderByDeps,
+  validateExtensionSet,
+  type CrossBundleContext,
+} from "./extension-validate.ts";
 import { emitStageFrontmatter, parseStageFrontmatter } from "../core/tools/aidlc-lib.ts";
 import { renderOnboarding } from "./onboarding.ts";
 
@@ -541,41 +547,6 @@ function extensionDirs(ext: ExtensionManifest): DirMap[] {
   return out;
 }
 
-// Validate the discovered extension set: requiresBundle deps resolve, no
-// number-range overlaps between bundles. (Per-stage number/range and artifact
-// prefix are checked in buildBundleDelta where the compiled graph is available.)
-function validateExtensions(exts: ExtensionManifest[]): void {
-  const names = new Set<string>([CORE_BUNDLE, ...exts.map((e) => e.name)]);
-  for (const ext of exts) {
-    for (const dep of ext.requiresBundle) {
-      const depName = dep.split("@")[0]; // ignore @^semver until §5.4
-      if (!names.has(depName)) {
-        throw new Error(
-          `extension "${ext.name}" requiresBundle "${dep}" — no such bundle (have: ${[...names].sort().join(", ")})`,
-        );
-      }
-    }
-  }
-  // Cross-bundle number-range overlap.
-  const seen: { bundle: string; phase: string; range: [number, number] }[] = [];
-  for (const ext of exts) {
-    for (const [phase, ranges] of Object.entries(ext.numberRanges)) {
-      for (const [lo, hi] of ranges) {
-        const r: [number, number] = [parseFloat(lo), parseFloat(hi)];
-        for (const prior of seen) {
-          if (prior.phase === phase && r[0] <= prior.range[1] && prior.range[0] <= r[1]) {
-            throw new Error(
-              `extension "${ext.name}" range [${lo},${hi}] in phase ${phase} overlaps ` +
-                `bundle "${prior.bundle}" [${prior.range[0]},${prior.range[1]}]`,
-            );
-          }
-        }
-        seen.push({ bundle: ext.name, phase, range: r });
-      }
-    }
-  }
-}
-
 // A bundle delta: install-root-relative path → bytes. Paths are relative to
 // dist/<name>/ (e.g. ".claude/aidlc-common/stages/operation/ops-min-deploy.md"),
 // committed under dist/<name>/extensions/<bundle>/.
@@ -664,10 +635,20 @@ function validateBundleGraph(mergedTmp: string, harnessDir: string, ext: Extensi
 }
 
 // Discover + load + validate every extension once; reused by write and check.
+// Runs the cross-bundle (multi-tenant) validation — semver deps, range overlaps,
+// artifact-namespace collisions, dependency cycles — and returns the extensions
+// in dependency order so a bundle's contributions apply after its dependencies'.
 function loadExtensions(): ExtensionManifest[] {
   const exts = discoverExtensions().map(loadExtension);
-  validateExtensions(exts);
-  return exts;
+  const ctx: CrossBundleContext = {
+    extensionsRoot: EXTENSIONS_ROOT,
+    coreArtifacts: coreArtifactsFrom(join(REPO_ROOT, "dist", "claude", ".claude", "tools", "data", "stage-graph.json")),
+  };
+  const errors = validateExtensionSet(exts, ctx);
+  if (errors.length > 0) {
+    throw new Error(`extension validation failed:\n  ${errors.join("\n  ")}`);
+  }
+  return orderByDeps(exts);
 }
 
 // ---------------------------------------------------------------------------
@@ -826,6 +807,76 @@ if (argv[0] === "codex" && argv[1] === "trust") {
     trustEntries: (project: string, hooksJson?: string) => string;
   };
   console.log(trustEntries(argv[pIdx + 1], hIdx !== -1 ? argv[hIdx + 1] : undefined));
+  process.exit(0);
+}
+
+// `package.ts --validate-ext [<name>]` — STANDALONE extension author check.
+// Validates one bundle (or all discovered) WITHOUT a harness build: manifest
+// load, cross-bundle set checks (deps/semver/ranges/artifact collisions), and
+// each contribution file (target resolves, anchors, namespacing). Fast iteration
+// loop for authors; exits 1 with a clear per-error list on any problem.
+if (argv.includes("--validate-ext")) {
+  const i = argv.indexOf("--validate-ext");
+  const only = argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : null;
+  const allNames = discoverExtensions();
+  if (allNames.length === 0) {
+    console.log("validate-ext: no extensions/ bundles discovered.");
+    process.exit(0);
+  }
+  const errors: string[] = [];
+  let exts;
+  try {
+    exts = allNames.map(loadExtension); // dir/name match + reserved-name guards
+  } catch (e) {
+    console.error(`validate-ext: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+  // Core stage slugs (target validation) + core artifacts (collision check) from
+  // the committed base graph.
+  const baseGraphPath = join(REPO_ROOT, "dist", "claude", ".claude", "tools", "data", "stage-graph.json");
+  const coreSlugs = new Set<string>();
+  if (existsSync(baseGraphPath)) {
+    for (const s of JSON.parse(readFileSync(baseGraphPath, "utf-8")) as Array<{ slug: string; bundle?: string }>) {
+      if (!s.bundle || s.bundle === CORE_BUNDLE) coreSlugs.add(s.slug);
+    }
+  }
+  // Cross-bundle set checks (always run over the full set so collisions surface).
+  errors.push(
+    ...validateExtensionSet(exts, {
+      extensionsRoot: EXTENSIONS_ROOT,
+      coreArtifacts: coreArtifactsFrom(baseGraphPath),
+    }),
+  );
+  // Per-contribution checks for the targeted bundle(s).
+  for (const ext of exts) {
+    if (only && ext.name !== only) continue;
+    const overlays = ext.contributes.overlays;
+    if (!overlays) continue;
+    const root = join(EXTENSIONS_ROOT, ext.name, overlays);
+    if (!existsSync(root)) continue;
+    for (const phase of readdirSync(root)) {
+      const phaseDir = join(root, phase);
+      if (!statSync(phaseDir).isDirectory()) continue;
+      for (const f of readdirSync(phaseDir).filter((x) => x.endsWith(".md"))) {
+        const rel = `${ext.name}/${overlays}${phase}/${f}`;
+        try {
+          const c = parseContribution(readFileSync(join(phaseDir, f), "utf-8"));
+          for (const e of validateContribution(c, { coreSlugs, bundle: ext.name })) {
+            errors.push(`${rel}: ${e}`);
+          }
+        } catch (e) {
+          errors.push(`${rel}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+  }
+  const scope = only ? `extension "${only}"` : `${exts.length} extension(s)`;
+  if (errors.length > 0) {
+    console.error(`validate-ext: ${scope} — ${errors.length} problem(s):`);
+    for (const e of errors) console.error("  - " + e);
+    process.exit(1);
+  }
+  console.log(`validate-ext: ${scope} OK.`);
   process.exit(0);
 }
 
