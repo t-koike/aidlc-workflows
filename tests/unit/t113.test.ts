@@ -41,18 +41,18 @@ import {
 function runStage(): Record<string, unknown> {
   return {
     kind: "run-stage",
-    stage: "application-design",
+    stage: "domain-design",
     phase: "inception",
     lead_agent: "aidlc-architect-agent",
     support_agents: ["aidlc-aws-platform-agent", "aidlc-design-agent"],
     mode: "inline",
     gate: true,
-    memory_path: "aidlc-docs/inception/application-design/memory.md",
+    memory_path: "aidlc-docs/inception/domain-design/memory.md",
     consumes: ["aidlc-docs/inception/requirements/requirements.md"],
-    produces: ["aidlc-docs/inception/application-design/decisions.md"],
+    produces: ["aidlc-docs/inception/domain-design/components.md"],
     rules_in_context: ["aidlc-org.md", "aidlc-team.md"],
     sensors_applicable: ["required-sections"],
-    stage_file: ".claude/skills/aidlc/stages/inception/application-design.md",
+    stage_file: ".claude/skills/aidlc/stages/inception/domain-design.md",
   };
 }
 
@@ -84,9 +84,9 @@ function invokeSwarm(): Record<string, unknown> {
 function presentGate(): Record<string, unknown> {
   return {
     kind: "present-gate",
-    stage: "application-design",
+    stage: "domain-design",
     phase: "inception",
-    memory_path: "aidlc-docs/inception/application-design/memory.md",
+    memory_path: "aidlc-docs/inception/domain-design/memory.md",
   };
 }
 

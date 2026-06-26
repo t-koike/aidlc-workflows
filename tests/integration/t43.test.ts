@@ -115,7 +115,7 @@ const STAGE_ORDER = [
   "requirements-analysis",
   "user-stories",
   "refined-mockups",
-  "application-design",
+  "domain-design",
   "units-generation",
   "delivery-planning",
   "functional-design",
@@ -217,7 +217,7 @@ describe("ideation stages output to aidlc-docs/ideation/", () => {
 // Tests 9-11: Inception outputs use aidlc-docs/inception/ (.sh:107-116)
 // ============================================================
 describe("inception stages output to aidlc-docs/inception/", () => {
-  for (const slug of ["reverse-engineering", "requirements-analysis", "application-design"]) {
+  for (const slug of ["reverse-engineering", "requirements-analysis", "domain-design"]) {
     test(`${slug} outputs to aidlc-docs/inception/`, () => {
       const v = out(slug);
       expect(v).not.toBeNull();
@@ -306,18 +306,18 @@ describe("scope-definition -> team-formation edge", () => {
 });
 
 // ============================================================
-// Test 17: application-design outputs -> units-generation inputs (.sh:192-205)
-// The .sh: ad_outputs grep -qi "application-design" AND ug_inputs grep -qi
-// "application-design\|design".
+// Test 17: domain-design outputs -> units-generation inputs (.sh:192-205)
+// The .sh: ad_outputs grep -qi "domain-design" AND ug_inputs grep -qi
+// "domain-design\|design".
 // ============================================================
-describe("application-design -> units-generation edge", () => {
-  test("application-design outputs and units-generation inputs cite the design artifact", () => {
-    const adOut = out("application-design");
+describe("domain-design -> units-generation edge", () => {
+  test("domain-design outputs and units-generation inputs cite the design artifact", () => {
+    const adOut = out("domain-design");
     const ugIn = inp("units-generation");
     expect(adOut).not.toBeNull();
     expect(ugIn).not.toBeNull();
-    expect(adOut!).toMatch(/application-design/i);
-    expect(ugIn!).toMatch(/application-design|design/i);
+    expect(adOut!).toMatch(/domain-design/i);
+    expect(ugIn!).toMatch(/domain-design|design/i);
   });
 });
 

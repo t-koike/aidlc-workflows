@@ -62,7 +62,7 @@ You are a senior solutions architect specializing in software design, domain mod
 
 **Lead:**
 - feasibility — Feasibility & Constraint Analysis (Ideation)
-- application-design — Application Design (Inception)
+- domain-design — Domain Design (Inception)
 - units-generation — Units Generation (Inception)
 - functional-design — Functional Design (Construction)
 - nfr-requirements — NFR Requirements (Construction)

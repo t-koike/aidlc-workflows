@@ -40,7 +40,7 @@
 // path — seed a fixture, pivot Current Stage to the target slug AND mark its
 // checkbox in-flight ([-]), then run bare `next`. That emits a run-stage for the
 // in-flight stage with produces/consumes resolved. Scope MUST be one where the
-// target EXECUTEs (feature scope does for application-design/functional-design/
+// target EXECUTEs (feature scope does for domain-design/functional-design/
 // code-generation). Project Type drives the conditional_on filter and is read
 // from the fixture:
 //   brownfield = state-brownfield-feature.md (Brownfield, feature)
@@ -165,48 +165,37 @@ function emitFor(fixture: string, slug: string): RunStageDirective {
 }
 
 // ============================================================================
-// Brownfield application-design — produces resolve under the stage's own dir;
+// Brownfield domain-design — produces resolve under the stage's own dir;
 // the conditional_on:brownfield consumes are PRESENT and keyed on their
-// producer (reverse-engineering), not on application-design. (.sh tests 1-5)
+// producer (reverse-engineering), not on domain-design. (.sh tests 1-5)
 // ============================================================================
-describe("t116 brownfield application-design (migrated from t116-directive-path-resolution.sh, plan 13)", () => {
+describe("t116 brownfield domain-design (migrated from t116-directive-path-resolution.sh, plan 13)", () => {
   let BF: RunStageDirective;
   beforeAll(() => {
-    BF = emitFor("state-brownfield-feature.md", "application-design");
+    BF = emitFor("state-brownfield-feature.md", "domain-design");
   });
 
   // .sh test 1: a bare produces name resolves to the canonical non-per-unit path.
   // STRONGER: assert the exact path is a member, not a substring of stdout.
-  test("1: brownfield produces 'components' → inception/application-design/components.md", () => {
+  test("1: brownfield produces 'components' → inception/domain-design/components.md", () => {
     expect(BF.produces).toContain(
-      "aidlc-docs/inception/application-design/components.md",
+      "aidlc-docs/inception/domain-design/components.md",
     );
   });
 
-  // .sh test 2: another produces name resolves under the same stage dir.
-  test("2: brownfield produces 'decisions' → inception/application-design/decisions.md", () => {
-    expect(BF.produces).toContain(
-      "aidlc-docs/inception/application-design/decisions.md",
-    );
-  });
-
-  // .sh test 3: the full produces set resolves (5 names). STRONGER than the .sh:
-  // assert the EXACT set, not just the count — every produces name maps to a path
-  // under application-design's own dir, and there are exactly five.
-  test("3: brownfield resolves all 5 produces to inception/application-design/ paths", () => {
+  // domain-design now produces a single canonical artifact: the components
+  // blueprint. (The old application-design 5-artifact set was folded into it
+  // under RFC 0001.)
+  test("3: brownfield resolves the single 'components' produces to inception/domain-design/", () => {
     expect(BF.produces).toEqual([
-      "aidlc-docs/inception/application-design/components.md",
-      "aidlc-docs/inception/application-design/component-methods.md",
-      "aidlc-docs/inception/application-design/services.md",
-      "aidlc-docs/inception/application-design/component-dependency.md",
-      "aidlc-docs/inception/application-design/decisions.md",
+      "aidlc-docs/inception/domain-design/components.md",
     ]);
-    expect(BF.produces.length).toBe(5);
+    expect(BF.produces.length).toBe(1);
   });
 
   // .sh test 4: conditional_on:brownfield consume 'architecture' is PRESENT for a
   // Brownfield project and resolves UNDER ITS PRODUCER reverse-engineering — NOT
-  // the consuming application-design dir.
+  // the consuming domain-design dir.
   test("4: brownfield consume 'architecture' → reverse-engineering/architecture.md (producer-keyed)", () => {
     expect(BF.consumes).toContain(
       "aidlc-docs/inception/reverse-engineering/architecture.md",
@@ -231,26 +220,26 @@ describe("t116 brownfield application-design (migrated from t116-directive-path-
   });
 
   // .sh test 13: a consume resolves to a DIFFERENT stage's dir than the consuming
-  // stage. Every brownfield consume of application-design is produced by some
-  // OTHER stage, so NONE may resolve under application-design's own dir. STRONGER
+  // stage. Every brownfield consume of domain-design is produced by some
+  // OTHER stage, so NONE may resolve under domain-design's own dir. STRONGER
   // than the .sh's single assert_not_contains: assert the invariant over EVERY
   // consume entry, not the raw joined string.
-  test("13: no application-design consume resolves under its own dir — each lives under its producer", () => {
+  test("13: no domain-design consume resolves under its own dir — each lives under its producer", () => {
     const selfKeyed = BF.consumes.filter((p) =>
-      p.startsWith("aidlc-docs/inception/application-design/"),
+      p.startsWith("aidlc-docs/inception/domain-design/"),
     );
     expect(selfKeyed).toEqual([]);
   });
 });
 
 // ============================================================================
-// Greenfield application-design — the brownfield-conditional consumes DROP;
+// Greenfield domain-design — the brownfield-conditional consumes DROP;
 // non-conditional produces still resolve (the filter is consumes-only). (.sh 6-8)
 // ============================================================================
-describe("t116 greenfield application-design — conditional_on drop", () => {
+describe("t116 greenfield domain-design — conditional_on drop", () => {
   let GF: RunStageDirective;
   beforeAll(() => {
-    GF = emitFor("state-construction.md", "application-design");
+    GF = emitFor("state-construction.md", "domain-design");
   });
 
   // .sh test 6: 'architecture' (conditional_on:brownfield) is DROPPED for greenfield.
@@ -270,7 +259,7 @@ describe("t116 greenfield application-design — conditional_on drop", () => {
   // the filter only touches conditional_on consumes-entries, not produces.
   test("8: greenfield produces 'components' still resolves (filter is consumes-only)", () => {
     expect(GF.produces).toContain(
-      "aidlc-docs/inception/application-design/components.md",
+      "aidlc-docs/inception/domain-design/components.md",
     );
   });
 });
@@ -286,9 +275,9 @@ describe("t116 per-unit {unit-name} injection", () => {
   beforeAll(() => {
     FD = emitFor("state-construction.md", "functional-design");
     CG = emitFor("state-construction.md", "code-generation");
-    // application-design here is only used for the test-11 negative; greenfield
+    // domain-design here is only used for the test-11 negative; greenfield
     // fixture so it EXECUTEs and is non-per-unit (inception phase).
-    AD = emitFor("state-construction.md", "application-design");
+    AD = emitFor("state-construction.md", "domain-design");
   });
 
   // .sh test 9: functional-design (per-unit) resolves a produces name to the
@@ -311,10 +300,10 @@ describe("t116 per-unit {unit-name} injection", () => {
     ).toBe(true);
   });
 
-  // .sh test 11 (negative): a non-per-unit stage (application-design) does NOT
+  // .sh test 11 (negative): a non-per-unit stage (domain-design) does NOT
   // get the construction/{unit-name}/ prefix — its produces stay under inception/.
   // STRONGER: assert the invariant over EVERY produces entry.
-  test("11: non-per-unit application-design produces NEVER carry construction/{unit-name}/", () => {
+  test("11: non-per-unit domain-design produces NEVER carry construction/{unit-name}/", () => {
     const perUnit = AD.produces.filter((p) =>
       p.includes("construction/{unit-name}/"),
     );

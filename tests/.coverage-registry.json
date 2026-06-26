@@ -2265,14 +2265,14 @@
     },
     {
       "unitClass": "stage",
-      "unitId": "inception/application-design",
+      "unitId": "inception/delivery-planning",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
     },
     {
       "unitClass": "stage",
-      "unitId": "inception/delivery-planning",
+      "unitId": "inception/domain-design",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"

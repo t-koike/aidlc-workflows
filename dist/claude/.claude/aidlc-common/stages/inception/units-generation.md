@@ -16,20 +16,12 @@ produces:
 consumes:
   - artifact: components
     required: true
-  - artifact: component-methods
-    required: true
-  - artifact: services
-    required: true
-  - artifact: component-dependency
-    required: true
-  - artifact: decisions
-    required: true
   - artifact: requirements
     required: true
   - artifact: stories
     required: false
 requires_stage:
-  - application-design
+  - domain-design
 sensors:
   - required-sections
   - upstream-coverage
@@ -38,7 +30,7 @@ scopes:
   - feature
   - mvp
   - workshop
-inputs: aidlc-docs/inception/application-design/ (all design artifacts), aidlc-docs/inception/requirements-analysis/requirements.md, aidlc-docs/inception/user-stories/stories.md (if produced)
+inputs: aidlc-docs/inception/domain-design/components.md, aidlc-docs/inception/requirements-analysis/requirements.md, aidlc-docs/inception/user-stories/stories.md (if produced)
 outputs: aidlc-docs/inception/units-generation/unit-of-work.md, aidlc-docs/inception/units-generation/unit-of-work-dependency.md, aidlc-docs/inception/units-generation/unit-of-work-story-map.md
 ---
 
@@ -61,7 +53,7 @@ Load aidlc-delivery-agent persona from `agents/aidlc-delivery-agent.md` and know
 
 ### Step 2: Load Prior Context
 
-- Read all artifacts from `aidlc-docs/inception/application-design/` (components.md, component-methods.md, services.md, component-dependency.md, decisions.md)
+- Read the `components` blueprint from `aidlc-docs/inception/domain-design/components.md` (the `cmp-NNN` component model)
 - Read `aidlc-docs/inception/requirements-analysis/requirements.md`
 - Read `aidlc-docs/inception/user-stories/stories.md` (if produced)
 
@@ -149,7 +141,7 @@ This stage's outputs are markdown artefacts under `aidlc-docs/inception/units-ge
 The imported sensors check those outputs:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings), and — for `unit-of-work-dependency.md` specifically — that the required fenced `yaml` edge block is present, well-formed, and cycle-free. Failure mode: missing headings or an absent/malformed/cyclic edge block emit `SENSOR_FAILED` with detail at `aidlc-docs/.aidlc-sensors/<stage-slug>/required-sections-<iso>.md`.
-- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter. Failure mode: missing upstream references emit `SENSOR_FAILED` listing each unreferenced artefact (this stage consumes `components`, `component-methods`, `services`, `component-dependency`, `decisions`, `requirements`, `stories`).
+- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter. Failure mode: missing upstream references emit `SENSOR_FAILED` listing each unreferenced artefact (this stage consumes `components`, `requirements`, `stories`).
 
 ## Learn
 

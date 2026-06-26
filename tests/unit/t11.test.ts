@@ -457,7 +457,7 @@ describe("t11 aidlc-statusline hook (migrated from t11-hook-statusline.sh, plan 
 - [S] requirements-analysis — SKIP
 - [S] user-stories — SKIP
 - [S] refined-mockups — SKIP
-- [S] application-design — SKIP
+- [S] domain-design — SKIP
 - [S] units-generation — SKIP
 - [S] delivery-planning — SKIP
 ### CONSTRUCTION PHASE
@@ -578,7 +578,7 @@ describe("t11 aidlc-statusline hook (migrated from t11-hook-statusline.sh, plan 
 - [ ] requirements-analysis — EXECUTE
 - [ ] user-stories — EXECUTE
 - [ ] refined-mockups — EXECUTE
-- [ ] application-design — EXECUTE
+- [ ] domain-design — EXECUTE
 - [ ] units-generation — EXECUTE
 - [ ] delivery-planning — EXECUTE
 ## Current Status

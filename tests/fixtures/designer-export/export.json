@@ -1118,12 +1118,12 @@
       ]
     },
     {
-      "slug": "application-design",
+      "slug": "domain-design",
       "number": "2.6",
-      "name": "Application Design",
+      "name": "Domain Design",
       "phase": "inception",
       "execution": "CONDITIONAL",
-      "condition": "Execute when new components or services are needed, or service layer design is required. Skip when changes are modifications to existing components only.",
+      "condition": "Execute when new components are needed, or the logical building blocks of the system need to be identified. Skip when changes are modifications to existing components only.",
       "lead_agent": "aidlc-architect-agent",
       "support_agents": [
         "aidlc-aws-platform-agent",
@@ -1131,11 +1131,7 @@
       ],
       "mode": "inline",
       "produces": [
-        "components",
-        "component-methods",
-        "services",
-        "component-dependency",
-        "decisions"
+        "components"
       ],
       "consumes": [
         {
@@ -1178,7 +1174,7 @@
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
       "inputs": "aidlc-docs/inception/requirements-analysis/requirements.md, aidlc-docs/inception/user-stories/stories.md (if produced), RE artifacts (if brownfield)",
-      "outputs": "aidlc-docs/inception/application-design/components.md, aidlc-docs/inception/application-design/component-methods.md, aidlc-docs/inception/application-design/services.md, aidlc-docs/inception/application-design/component-dependency.md, aidlc-docs/inception/application-design/decisions.md",
+      "outputs": "aidlc-docs/inception/domain-design/components.md",
       "rules_in_context": [
         {
           "path": ".claude/rules/aidlc-org.md",
@@ -1233,22 +1229,6 @@
           "required": true
         },
         {
-          "artifact": "component-methods",
-          "required": true
-        },
-        {
-          "artifact": "services",
-          "required": true
-        },
-        {
-          "artifact": "component-dependency",
-          "required": true
-        },
-        {
-          "artifact": "decisions",
-          "required": true
-        },
-        {
           "artifact": "requirements",
           "required": true
         },
@@ -1258,7 +1238,7 @@
         }
       ],
       "requires_stage": [
-        "application-design"
+        "domain-design"
       ],
       "sensors": [
         "required-sections",
@@ -1272,7 +1252,7 @@
       ],
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
-      "inputs": "aidlc-docs/inception/application-design/ (all design artifacts), aidlc-docs/inception/requirements-analysis/requirements.md, aidlc-docs/inception/user-stories/stories.md (if produced)",
+      "inputs": "aidlc-docs/inception/domain-design/components.md, aidlc-docs/inception/requirements-analysis/requirements.md, aidlc-docs/inception/user-stories/stories.md (if produced)",
       "outputs": "aidlc-docs/inception/units-generation/unit-of-work.md, aidlc-docs/inception/units-generation/unit-of-work-dependency.md, aidlc-docs/inception/units-generation/unit-of-work-story-map.md",
       "rules_in_context": [
         {
@@ -1439,14 +1419,6 @@
         {
           "artifact": "components",
           "required": true
-        },
-        {
-          "artifact": "component-methods",
-          "required": true
-        },
-        {
-          "artifact": "services",
-          "required": true
         }
       ],
       "requires_stage": [
@@ -1467,7 +1439,7 @@
       ],
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
-      "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, application design artifacts",
+      "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design)",
       "outputs": "aidlc-docs/construction/{unit-name}/functional-design/ (business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md)",
       "rules_in_context": [
         {
@@ -1766,10 +1738,6 @@
         },
         {
           "artifact": "components",
-          "required": true
-        },
-        {
-          "artifact": "services",
           "required": true
         },
         {
@@ -2734,7 +2702,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "SKIP",
         "refined-mockups": "SKIP",
-        "application-design": "SKIP",
+        "domain-design": "SKIP",
         "units-generation": "SKIP",
         "delivery-planning": "SKIP",
         "functional-design": "SKIP",
@@ -2777,7 +2745,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "EXECUTE",
         "refined-mockups": "EXECUTE",
-        "application-design": "EXECUTE",
+        "domain-design": "EXECUTE",
         "units-generation": "EXECUTE",
         "delivery-planning": "EXECUTE",
         "functional-design": "EXECUTE",
@@ -2816,7 +2784,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "EXECUTE",
         "refined-mockups": "EXECUTE",
-        "application-design": "EXECUTE",
+        "domain-design": "EXECUTE",
         "units-generation": "EXECUTE",
         "delivery-planning": "EXECUTE",
         "functional-design": "EXECUTE",
@@ -2855,7 +2823,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "SKIP",
         "refined-mockups": "SKIP",
-        "application-design": "SKIP",
+        "domain-design": "SKIP",
         "units-generation": "SKIP",
         "delivery-planning": "SKIP",
         "functional-design": "SKIP",
@@ -2898,7 +2866,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "EXECUTE",
         "refined-mockups": "EXECUTE",
-        "application-design": "EXECUTE",
+        "domain-design": "EXECUTE",
         "units-generation": "EXECUTE",
         "delivery-planning": "EXECUTE",
         "functional-design": "EXECUTE",
@@ -2940,7 +2908,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "SKIP",
         "refined-mockups": "SKIP",
-        "application-design": "SKIP",
+        "domain-design": "SKIP",
         "units-generation": "SKIP",
         "delivery-planning": "SKIP",
         "functional-design": "SKIP",
@@ -2984,7 +2952,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "SKIP",
         "refined-mockups": "SKIP",
-        "application-design": "SKIP",
+        "domain-design": "SKIP",
         "units-generation": "SKIP",
         "delivery-planning": "SKIP",
         "functional-design": "EXECUTE",
@@ -3027,7 +2995,7 @@
         "requirements-analysis": "SKIP",
         "user-stories": "SKIP",
         "refined-mockups": "SKIP",
-        "application-design": "SKIP",
+        "domain-design": "SKIP",
         "units-generation": "SKIP",
         "delivery-planning": "SKIP",
         "functional-design": "SKIP",
@@ -3071,7 +3039,7 @@
         "requirements-analysis": "EXECUTE",
         "user-stories": "EXECUTE",
         "refined-mockups": "EXECUTE",
-        "application-design": "EXECUTE",
+        "domain-design": "EXECUTE",
         "units-generation": "EXECUTE",
         "delivery-planning": "EXECUTE",
         "functional-design": "EXECUTE",
@@ -3122,15 +3090,12 @@
     "code-structure",
     "code-summary",
     "competitive-analysis",
-    "component-dependency",
     "component-inventory",
-    "component-methods",
     "components",
     "constraint-register",
     "cost-analysis",
     "dashboards",
     "decision-log",
-    "decisions",
     "delivery-planning-questions",
     "dependencies",
     "deployment-architecture",
@@ -3198,7 +3163,6 @@
     "security-design",
     "security-requirements",
     "security-test-instructions",
-    "services",
     "shared-infrastructure",
     "skill-matrix",
     "slo-config",

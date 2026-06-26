@@ -24,10 +24,6 @@ consumes:
     required: true
   - artifact: components
     required: true
-  - artifact: component-methods
-    required: true
-  - artifact: services
-    required: true
 requires_stage:
   - units-generation
 sensors:
@@ -41,7 +37,7 @@ scopes:
   - mvp
   - refactor
   - workshop
-inputs: unit-of-work.md, unit-of-work-story-map.md, requirements.md, application design artifacts
+inputs: unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design)
 outputs: "aidlc-docs/construction/{unit-name}/functional-design/ (business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md)"
 ---
 
@@ -73,7 +69,7 @@ Load aidlc-architect-agent (lead) persona from `agents/aidlc-architect-agent.md`
 
 ### Step 2: Read Unit Context
 
-Read the unit definition from `aidlc-docs/inception/units-generation/unit-of-work.md` and assigned stories from `aidlc-docs/inception/units-generation/unit-of-work-story-map.md`. Read `aidlc-docs/inception/requirements-analysis/requirements.md` and any application design artifacts from `aidlc-docs/inception/application-design/`.
+Read the unit definition from `aidlc-docs/inception/units-generation/unit-of-work.md` and assigned stories from `aidlc-docs/inception/units-generation/unit-of-work-story-map.md`. Read `aidlc-docs/inception/requirements-analysis/requirements.md` and the `components` blueprint from `aidlc-docs/inception/domain-design/components.md`.
 
 ### Step 3: Create Functional Design Plan
 
@@ -134,7 +130,7 @@ This stage's outputs are markdown design artefacts under `aidlc-docs/constructio
 The imported sensors check those outputs:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings).
-- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `unit-of-work`, `unit-of-work-story-map`, `requirements`, `components`, `component-methods`, `services`).
+- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `unit-of-work`, `unit-of-work-story-map`, `requirements`, `components`).
 - **`linter`** runs against any TypeScript/JavaScript snippets the design includes (matches `**/*.{ts,js}`).
 - **`type-check`** runs against any TypeScript/TSX snippets the design includes (matches `**/*.{ts,tsx}`).
 

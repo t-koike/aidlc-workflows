@@ -334,7 +334,7 @@ export function setupIntegrationProject(
 
   if (opts.withInceptionArtifacts) {
     const ra = join(proj, "aidlc-docs", "inception", "requirements-analysis");
-    const ad = join(proj, "aidlc-docs", "inception", "application-design");
+    const ad = join(proj, "aidlc-docs", "inception", "domain-design");
     const ug = join(proj, "aidlc-docs", "inception", "units-generation");
     mkdirSync(ra, { recursive: true });
     mkdirSync(ad, { recursive: true });

@@ -77,7 +77,7 @@ const STAGE_TABLE: ReadonlyArray<readonly [phase: string, slug: string]> = [
   ["inception", "requirements-analysis"],
   ["inception", "user-stories"],
   ["inception", "refined-mockups"],
-  ["inception", "application-design"],
+  ["inception", "domain-design"],
   ["inception", "units-generation"],
   ["inception", "delivery-planning"],
   // Construction (7)
