@@ -13,11 +13,13 @@ produces:
   - code-generation-plan
   - code-summary
 consumes:
-  - artifact: business-logic-model
+  - artifact: entities
     required: false
-  - artifact: business-rules
+  - artifact: rules
     required: false
-  - artifact: domain-entities
+  - artifact: functional-spec
+    required: false
+  - artifact: api-specification
     required: false
   - artifact: performance-design
     required: false

@@ -282,9 +282,9 @@ describe("t116 per-unit {unit-name} injection", () => {
 
   // .sh test 9: functional-design (per-unit) resolves a produces name to the
   // per-unit shape construction/{unit-name}/functional-design/<name>.md.
-  test("9: per-unit functional-design injects {unit-name}: construction/{unit-name}/functional-design/business-logic-model.md", () => {
+  test("9: per-unit functional-design injects {unit-name}: construction/{unit-name}/functional-design/entities.md", () => {
     expect(FD.produces).toContain(
-      "aidlc-docs/construction/{unit-name}/functional-design/business-logic-model.md",
+      "aidlc-docs/construction/{unit-name}/functional-design/entities.md",
     );
   });
 

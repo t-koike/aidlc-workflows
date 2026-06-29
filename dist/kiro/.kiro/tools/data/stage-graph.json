@@ -1485,10 +1485,10 @@
     "mode": "inline",
     "for_each": "unit-of-work",
     "produces": [
-      "business-logic-model",
-      "business-rules",
-      "domain-entities",
-      "frontend-components"
+      "entities",
+      "rules",
+      "api-specification",
+      "functional-spec"
     ],
     "consumes": [
       {
@@ -1506,6 +1506,10 @@
       {
         "artifact": "components",
         "required": true
+      },
+      {
+        "artifact": "contracts",
+        "required": false
       }
     ],
     "requires_stage": [
@@ -1515,6 +1519,7 @@
     "sensors": [
       "required-sections",
       "upstream-coverage",
+      "blueprint-shape",
       "linter",
       "type-check"
     ],
@@ -1527,8 +1532,8 @@
     ],
     "reviewer": "aidlc-architecture-reviewer-agent",
     "reviewer_max_iterations": 2,
-    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design)",
-    "outputs": "aidlc-docs/construction/{unit-name}/functional-design/ (business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md)",
+    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design), contracts (contract-design, this unit's boundaries)",
+    "outputs": "aidlc-docs/construction/{unit-name}/functional-design/ (entities.md, rules.md, api-specification.md, functional-spec.md)",
     "rules_in_context": [
       {
         "path": ".kiro/steering/aidlc-org.md",
@@ -1556,6 +1561,11 @@
       {
         "id": "upstream-coverage",
         "path": ".kiro/sensors/aidlc-upstream-coverage.md",
+        "matches": "**/aidlc-docs/**"
+      },
+      {
+        "id": "blueprint-shape",
+        "path": ".kiro/sensors/aidlc-blueprint-shape.md",
         "matches": "**/aidlc-docs/**"
       },
       {
@@ -1594,11 +1604,7 @@
     ],
     "consumes": [
       {
-        "artifact": "business-logic-model",
-        "required": true
-      },
-      {
-        "artifact": "business-rules",
+        "artifact": "functional-spec",
         "required": true
       },
       {
@@ -1716,7 +1722,7 @@
         "required": true
       },
       {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": true
       }
     ],
@@ -1829,7 +1835,7 @@
         "required": true
       },
       {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": true
       }
     ],
@@ -1912,15 +1918,19 @@
     ],
     "consumes": [
       {
-        "artifact": "business-logic-model",
+        "artifact": "entities",
         "required": false
       },
       {
-        "artifact": "business-rules",
+        "artifact": "rules",
         "required": false
       },
       {
-        "artifact": "domain-entities",
+        "artifact": "functional-spec",
+        "required": false
+      },
+      {
+        "artifact": "api-specification",
         "required": false
       },
       {

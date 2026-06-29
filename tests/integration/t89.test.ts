@@ -194,7 +194,7 @@ describe("t89 sensors_applicable resolution (in-process compileStageGraph)", () 
   test("multiple-imports: resolution order matches authored order", () => {
     const { stages } = compileWithSensors(join(FIXTURES, "basic-import"));
     const ids = stageBySlug(stages, "functional-design").sensors_applicable.map((s) => s.id);
-    expect(ids).toEqual(["required-sections", "upstream-coverage", "linter", "type-check"]);
+    expect(ids).toEqual(["required-sections", "upstream-coverage", "blueprint-shape", "linter", "type-check"]);
   });
 
   // Case 7 (.sh:98-101): every initialization stage (sensors: []) resolves [].
@@ -332,13 +332,13 @@ describe("t89 sensors_applicable resolution (in-process compileStageGraph)", () 
   });
 
   // Case 19 (.sh:230-241): per-stage matrix — code-generation=2, build-and-test=3,
-  // workspace-scaffold=0, functional-design=4.
-  test("per-stage matrix: CG=2, BT=3, WS=0, FD=4", () => {
+  // workspace-scaffold=0, functional-design=5.
+  test("per-stage matrix: CG=2, BT=3, WS=0, FD=5", () => {
     const { stages } = compileWithSensors(join(FIXTURES, "basic-import"));
     expect(stageBySlug(stages, "code-generation").sensors_applicable.length).toBe(2);
     expect(stageBySlug(stages, "build-and-test").sensors_applicable.length).toBe(3);
     expect(stageBySlug(stages, "workspace-scaffold").sensors_applicable.length).toBe(0);
-    expect(stageBySlug(stages, "functional-design").sensors_applicable.length).toBe(4);
+    expect(stageBySlug(stages, "functional-design").sensors_applicable.length).toBe(5);
   });
 
   // Direct-unit reinforcement (not a distinct .sh case, but pins the units the

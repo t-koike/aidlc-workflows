@@ -95,4 +95,4 @@ Per unit: widget-cart
 ## Session Resume Point
 - **Last Completed Stage**: delivery-planning
 - **Next Action**: Begin the first Construction Bolt (walking-skeleton gate)
-- **Pending Artifacts**: business-logic-model.md
+- **Pending Artifacts**: entities.md

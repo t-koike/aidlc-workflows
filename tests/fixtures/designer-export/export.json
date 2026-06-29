@@ -1486,10 +1486,10 @@
       "mode": "inline",
       "for_each": "unit-of-work",
       "produces": [
-        "business-logic-model",
-        "business-rules",
-        "domain-entities",
-        "frontend-components"
+        "entities",
+        "rules",
+        "api-specification",
+        "functional-spec"
       ],
       "consumes": [
         {
@@ -1507,6 +1507,10 @@
         {
           "artifact": "components",
           "required": true
+        },
+        {
+          "artifact": "contracts",
+          "required": false
         }
       ],
       "requires_stage": [
@@ -1516,6 +1520,7 @@
       "sensors": [
         "required-sections",
         "upstream-coverage",
+        "blueprint-shape",
         "linter",
         "type-check"
       ],
@@ -1528,8 +1533,8 @@
       ],
       "reviewer": "aidlc-architecture-reviewer-agent",
       "reviewer_max_iterations": 2,
-      "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design)",
-      "outputs": "aidlc-docs/construction/{unit-name}/functional-design/ (business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md)",
+      "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design), contracts (contract-design, this unit's boundaries)",
+      "outputs": "aidlc-docs/construction/{unit-name}/functional-design/ (entities.md, rules.md, api-specification.md, functional-spec.md)",
       "rules_in_context": [
         {
           "path": ".claude/rules/aidlc-org.md",
@@ -1557,6 +1562,11 @@
         {
           "id": "upstream-coverage",
           "path": ".claude/sensors/aidlc-upstream-coverage.md",
+          "matches": "**/aidlc-docs/**"
+        },
+        {
+          "id": "blueprint-shape",
+          "path": ".claude/sensors/aidlc-blueprint-shape.md",
           "matches": "**/aidlc-docs/**"
         },
         {
@@ -1595,11 +1605,7 @@
       ],
       "consumes": [
         {
-          "artifact": "business-logic-model",
-          "required": true
-        },
-        {
-          "artifact": "business-rules",
+          "artifact": "functional-spec",
           "required": true
         },
         {
@@ -1717,7 +1723,7 @@
           "required": true
         },
         {
-          "artifact": "business-logic-model",
+          "artifact": "functional-spec",
           "required": true
         }
       ],
@@ -1830,7 +1836,7 @@
           "required": true
         },
         {
-          "artifact": "business-logic-model",
+          "artifact": "functional-spec",
           "required": true
         }
       ],
@@ -1913,15 +1919,19 @@
       ],
       "consumes": [
         {
-          "artifact": "business-logic-model",
+          "artifact": "entities",
           "required": false
         },
         {
-          "artifact": "business-rules",
+          "artifact": "rules",
           "required": false
         },
         {
-          "artifact": "domain-entities",
+          "artifact": "functional-spec",
+          "required": false
+        },
+        {
+          "artifact": "api-specification",
           "required": false
         },
         {
@@ -3169,6 +3179,7 @@
     "alarms",
     "anomaly-config",
     "api-documentation",
+    "api-specification",
     "approval-handoff-questions",
     "architecture",
     "bolt-plan",
@@ -3176,9 +3187,7 @@
     "build-instructions",
     "build-test-results",
     "build-vs-buy",
-    "business-logic-model",
     "business-overview",
-    "business-rules",
     "cd-config",
     "ci-config",
     "ci-pipeline-questions",
@@ -3205,8 +3214,8 @@
     "deployment-strategy",
     "design-system-mapping",
     "discovered-rules",
-    "domain-entities",
     "drift-report",
+    "entities",
     "environment-inventory",
     "environment-provisioning-questions",
     "escalation-matrix",
@@ -3216,7 +3225,7 @@
     "feasibility-questions",
     "feedback-loop",
     "feedback-optimization-questions",
-    "frontend-components",
+    "functional-spec",
     "health-check-report",
     "incident-plan",
     "incident-response-questions",
@@ -3255,6 +3264,7 @@
     "risk-and-sequencing-rationale",
     "rollback-runbook",
     "rough-mockups-questions",
+    "rules",
     "runbooks",
     "scalability-design",
     "scalability-requirements",

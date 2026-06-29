@@ -11,10 +11,10 @@ reviewer: aidlc-architecture-reviewer-agent
 reviewer_max_iterations: 2
 for_each: unit-of-work
 produces:
-  - business-logic-model
-  - business-rules
-  - domain-entities
-  - frontend-components
+  - entities
+  - rules
+  - api-specification
+  - functional-spec
 consumes:
   - artifact: unit-of-work
     required: true
@@ -24,12 +24,15 @@ consumes:
     required: true
   - artifact: components
     required: true
+  - artifact: contracts
+    required: false
 requires_stage:
   - units-generation
   - contract-design
 sensors:
   - required-sections
   - upstream-coverage
+  - blueprint-shape
   - linter
   - type-check
 scopes:
@@ -38,8 +41,8 @@ scopes:
   - mvp
   - refactor
   - workshop
-inputs: unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design)
-outputs: "aidlc-docs/construction/{unit-name}/functional-design/ (business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md)"
+inputs: unit-of-work.md, unit-of-work-story-map.md, requirements.md, components blueprint (domain-design), contracts (contract-design, this unit's boundaries)
+outputs: "aidlc-docs/construction/{unit-name}/functional-design/ (entities.md, rules.md, api-specification.md, functional-spec.md)"
 ---
 
 # Functional Design
@@ -97,12 +100,14 @@ If ANY ambiguity found: create follow-up questions and resolve before proceeding
 
 ### Step 5: Generate Artifacts
 
-Generate the following in `aidlc-docs/construction/{unit-name}/functional-design/`:
+Generate the following in `aidlc-docs/construction/{unit-name}/functional-design/`. Entities and rules carry stable IDs and **reference the `cmp-NNN` component IDs** from the upstream `components` blueprint they belong to.
 
-- **business-logic-model.md**: Detailed algorithms, workflows, data transformations, processing sequences, and decision trees for the unit's business logic
-- **business-rules.md**: Decision rules, validation logic, constraints, policies, conditional behavior, and business invariants
-- **domain-entities.md**: Entities, relationships, data structures, attributes, lifecycle states, and entity interaction patterns
-- **frontend-components.md** (CONDITIONAL — only if unit includes frontend/UI): Component hierarchy, props/state design, interaction flows, form validation rules, API integration points
+- **entities.md**: the structured entity model. Carries a fenced `yaml` block where every entity has a stable `ent-NNN` id, attributes (with types/constraints), relationships, lifecycle states, and the `cmp-NNN` component(s) that own it. A human-readable entity diagram + table accompanies the block.
+- **rules.md**: the structured business-rule model. Carries a fenced `yaml` block where every rule has a stable `rule-NNN` id, a trigger, enforcement logic, violation behaviour, and the `cmp-NNN`/`ent-NNN` it applies to.
+- **api-specification.md**: the provider-side interface for this unit — operations/events, request/response payloads, auth, errors, and versioning. Aligns with any `contracts` covering this unit's boundaries.
+- **functional-spec.md**: the human-readable view derived from the YAML blocks — workflows, state machines, decision trees, and a rules summary. Includes frontend component flows when the unit has a UI.
+
+The `entities` and `rules` YAML blocks are validated by the `blueprint-shape` sensor: stable-id shape plus every referenced `cmp-NNN` resolving to a declared component in the upstream blueprint.
 
 ### Step 6: Update State
 
@@ -126,12 +131,13 @@ Approval gate: strictly 2-option (Approve / Request Changes).
 
 ## Sensors
 
-This stage's outputs are markdown design artefacts under `aidlc-docs/construction/functional-design/`. Some sections include code samples that the code-shape sensors can also flag.
+This stage's outputs are markdown design artefacts under `aidlc-docs/construction/functional-design/`. The entity/rule artefacts carry fenced `yaml` blueprint blocks; some sections include code samples that the code-shape sensors can also flag.
 
 The imported sensors check those outputs:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings).
-- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `unit-of-work`, `unit-of-work-story-map`, `requirements`, `components`).
+- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `unit-of-work`, `unit-of-work-story-map`, `requirements`, `components`, `contracts`).
+- **`blueprint-shape`** verifies the `entities`/`rules` fenced `yaml` blocks are well-formed (stable `ent-NNN`/`rule-NNN` ids) and that every `cmp-NNN` they reference resolves to a component declared in the upstream `components` blueprint. An orphan reference emits `SENSOR_FAILED`.
 - **`linter`** runs against any TypeScript/JavaScript snippets the design includes (matches `**/*.{ts,js}`).
 - **`type-check`** runs against any TypeScript/TSX snippets the design includes (matches `**/*.{ts,tsx}`).
 
