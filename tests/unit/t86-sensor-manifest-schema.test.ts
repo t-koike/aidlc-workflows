@@ -1,4 +1,4 @@
-// covers: function:parseSensorManifest, function:validateSensorManifest, file:sensors/aidlc-required-sections.md, file:sensors/aidlc-upstream-coverage.md, file:sensors/aidlc-linter.md, file:sensors/aidlc-type-check.md
+// covers: function:parseSensorManifest, function:validateSensorManifest, file:sensors/aidlc-required-sections.md, file:sensors/aidlc-upstream-coverage.md, file:sensors/aidlc-linter.md, file:sensors/aidlc-type-check.md, file:sensors/aidlc-blueprint-shape.md
 //
 // t86 — sensor manifest schema for the 4 framework sensors + the legacy
 // negative-case fixtures. Migrated from tests/unit/t86-sensor-manifest-schema.sh
@@ -86,6 +86,7 @@ const SENSOR_NAMES = [
   "upstream-coverage",
   "linter",
   "type-check",
+  "blueprint-shape",
 ] as const;
 
 const manifestPath = (name: string): string =>
@@ -116,7 +117,7 @@ describe("t86 sensor manifest schema (migrated from t86-sensor-manifest-schema.s
     expect(statSync(SENSORS_DIR).isDirectory()).toBe(true);
   });
 
-  test("each of the 4 framework manifests exists [.sh Part 1 ×4]", () => {
+  test("each of the 5 framework manifests exists [.sh Part 1 ×5]", () => {
     for (const name of SENSOR_NAMES) {
       const f = manifestPath(name);
       expect(existsSync(f), `missing sensors/aidlc-${name}.md`).toBe(true);
@@ -209,22 +210,23 @@ describe("t86 sensor manifest schema (migrated from t86-sensor-manifest-schema.s
     ).toThrow(/missing required field: id/);
   });
 
-  // .sh L36: plan 28. Re-count the assertion budget so a silently dropped
-  // manifest or negative case is caught (5 existence + 4×5 frontmatter + 3
-  // negatives = 28).
-  test("covers EXACTLY 28 assertions (TAP plan parity)", () => {
-    const PART1 = 1 + SENSOR_NAMES.length; // dir + 4 files = 5
-    const PART2 = SENSOR_NAMES.length * 5; // 4 manifests × 5 checks = 20
+  // .sh L36: plan 28 (now 34 with the 5th sensor blueprint-shape). Re-count the
+  // assertion budget so a silently dropped manifest or negative case is caught
+  // (6 existence + 5×5 frontmatter + 3 negatives = 34).
+  test("covers EXACTLY 34 assertions (TAP plan parity)", () => {
+    const PART1 = 1 + SENSOR_NAMES.length; // dir + 5 files = 6
+    const PART2 = SENSOR_NAMES.length * 5; // 5 manifests × 5 checks = 25
     const PART3 = 3; // 3 negative-case fixtures
-    expect(PART1).toBe(5);
-    expect(PART2).toBe(20);
+    expect(PART1).toBe(6);
+    expect(PART2).toBe(25);
     expect(PART3).toBe(3);
-    expect(PART1 + PART2 + PART3).toBe(28);
+    expect(PART1 + PART2 + PART3).toBe(34);
     expect([...SENSOR_NAMES]).toEqual([
       "required-sections",
       "upstream-coverage",
       "linter",
       "type-check",
+      "blueprint-shape",
     ]);
   });
 });

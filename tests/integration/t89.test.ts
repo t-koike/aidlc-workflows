@@ -349,6 +349,7 @@ describe("t89 sensors_applicable resolution (in-process compileStageGraph)", () 
     __resetGraphCache();
     const byId = loadSensors();
     expect([...byId.keys()].sort()).toEqual([
+      "blueprint-shape",
       "linter",
       "required-sections",
       "type-check",

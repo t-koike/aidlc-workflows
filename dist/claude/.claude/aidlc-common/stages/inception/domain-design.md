@@ -31,6 +31,7 @@ requires_stage:
 sensors:
   - required-sections
   - upstream-coverage
+  - blueprint-shape
 scopes:
   - enterprise
   - feature
@@ -145,6 +146,7 @@ The imported sensors check that output:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings). Failure mode: missing headings emit `SENSOR_FAILED` with detail at `aidlc-docs/.aidlc-sensors/<stage-slug>/required-sections-<iso>.md`.
 - **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `requirements`, `stories`, `team-practices`).
+- **`blueprint-shape`** verifies the fenced `yaml` component block is well-formed: every component carries a unique `cmp-NNN` id, a `name`, a `behaviour`, and every `cmp-NNN` referenced internally (dependencies / dependent_components) resolves to a declared component. Failure mode: a malformed block or an orphan `cmp-NNN` reference emits `SENSOR_FAILED` with the offending id.
 
 ## Learn
 

@@ -1163,7 +1163,8 @@
       ],
       "sensors": [
         "required-sections",
-        "upstream-coverage"
+        "upstream-coverage",
+        "blueprint-shape"
       ],
       "scopes": [
         "enterprise",
@@ -1202,6 +1203,11 @@
         {
           "id": "upstream-coverage",
           "path": ".claude/sensors/aidlc-upstream-coverage.md",
+          "matches": "**/aidlc-docs/**"
+        },
+        {
+          "id": "blueprint-shape",
+          "path": ".claude/sensors/aidlc-blueprint-shape.md",
           "matches": "**/aidlc-docs/**"
         }
       ]

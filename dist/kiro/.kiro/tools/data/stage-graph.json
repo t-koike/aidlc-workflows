@@ -1162,7 +1162,8 @@
     ],
     "sensors": [
       "required-sections",
-      "upstream-coverage"
+      "upstream-coverage",
+      "blueprint-shape"
     ],
     "scopes": [
       "enterprise",
@@ -1201,6 +1202,11 @@
       {
         "id": "upstream-coverage",
         "path": ".kiro/sensors/aidlc-upstream-coverage.md",
+        "matches": "**/aidlc-docs/**"
+      },
+      {
+        "id": "blueprint-shape",
+        "path": ".kiro/sensors/aidlc-blueprint-shape.md",
         "matches": "**/aidlc-docs/**"
       }
     ]
