@@ -37,6 +37,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -45,7 +46,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { HarnessManifest } from "./manifest-types.ts";
@@ -144,6 +145,39 @@ function* walk(dir: string): Generator<string> {
     if (statSync(full).isDirectory()) yield* walk(full);
     else yield full;
   }
+}
+
+// Byte-diff a freshly built tree against its committed counterpart, returning
+// MISSING / DIFFERS / ORPHAN problem strings prefixed by `relPrefix`. The single
+// built-vs-committed walk shared by checkHarness and checkPlugins so both drift
+// guards stay in lockstep (round-2: the two had drifted into separate copies).
+// `isExempt(rel)` skips a committed-only path from the orphan sweep (authored
+// files the build legitimately doesn't produce).
+function diffTrees(
+  built: string,
+  committed: string,
+  relPrefix: string,
+  isExempt: (rel: string) => boolean = () => false,
+): string[] {
+  const problems: string[] = [];
+  const builtFiles = new Set<string>();
+  if (existsSync(built)) {
+    for (const f of walk(built)) {
+      const rel = relative(built, f);
+      builtFiles.add(rel);
+      const c = join(committed, rel);
+      if (!existsSync(c)) problems.push(`MISSING in dist: ${relPrefix}/${rel}`);
+      else if (!readFileSync(f).equals(readFileSync(c))) problems.push(`DIFFERS: ${relPrefix}/${rel}`);
+    }
+  }
+  if (existsSync(committed)) {
+    for (const f of walk(committed)) {
+      const rel = relative(committed, f);
+      if (builtFiles.has(rel) || isExempt(rel)) continue;
+      problems.push(`ORPHAN in dist: ${relPrefix}/${rel}`);
+    }
+  }
+  return problems;
 }
 
 // The two compiled-data files graph compile bootstraps its number/name seed
@@ -537,26 +571,10 @@ function checkHarness(name: string): string[] {
     // Seed compile from the committed tree (untouched under --check).
     const emitWritten = buildTree(m, tmp, committed);
     const builtRoot = join(tmp, m.harnessDir);
-    // Built → committed: MISSING / DIFFERS.
-    const builtFiles = new Set<string>();
-    for (const f of walk(builtRoot)) {
-      const rel = relative(builtRoot, f);
-      builtFiles.add(rel);
-      const want = readFileSync(f);
-      const committedPath = join(committed, rel);
-      if (!existsSync(committedPath)) problems.push(`MISSING in dist: ${name}/${m.harnessDir}/${rel}`);
-      else if (!readFileSync(committedPath).equals(want))
-        problems.push(`DIFFERS: ${name}/${m.harnessDir}/${rel}`);
-    }
-    // Committed → built: ORPHAN (a committed file the build didn't produce).
-    if (existsSync(committed)) {
-      for (const f of walk(committed)) {
-        const rel = relative(committed, f);
-        if (builtFiles.has(rel)) continue;
-        if (m.authoredExempt.some((re) => re.test(rel))) continue;
-        problems.push(`ORPHAN in dist: ${name}/${m.harnessDir}/${rel}`);
-      }
-    }
+    // Built ↔ committed diff (MISSING / DIFFERS / ORPHAN), shared with checkPlugins.
+    // authoredExempt paths are legitimately committed-only (not build output).
+    problems.push(...diffTrees(builtRoot, committed, `${name}/${m.harnessDir}`,
+      (rel) => m.authoredExempt.some((re) => re.test(rel))));
     // Project-root harness files (e.g. dist/<name>/AGENTS.md) live OUTSIDE the
     // harness dir — diff each explicitly (built into tmp/<dst> vs dist/<name>/<dst>).
     const committedDistRoot = join(REPO_ROOT, "dist", name);
@@ -622,6 +640,261 @@ if (argv[0] === "codex" && argv[1] === "trust") {
   process.exit(0);
 }
 
+const PLUGINS_ROOT = join(REPO_ROOT, "plugins");
+
+function discoverPluginNames(): string[] {
+  if (!existsSync(PLUGINS_ROOT)) return [];
+  return readdirSync(PLUGINS_ROOT)
+    .filter((n) => existsSync(join(PLUGINS_ROOT, n, ".aidlc-plugin", "plugin.json")))
+    .sort();
+}
+
+// Per-harness plugin projection descriptor, DERIVED from each harness's own
+// manifest rather than a hardcoded map — so a new harness added per the
+// one-core-many-harnesses promise automatically gets a plugin projection instead
+// of being silently skipped (the omission class that lost kiro-ide in round 1).
+// harnessLeaf = manifest.harnessDir; manifestDir + kind come from the manifest's
+// optional `plugin` block, defaulting to "<harnessDir>-plugin" + "store".
+type PluginTarget = { manifestDir: string; harnessLeaf: string; kind: "store" | "kiro" };
+function pluginTargetFor(harnessName: string): PluginTarget | null {
+  if (!existsSync(join(HARNESS_ROOT, harnessName, "manifest.ts"))) return null;
+  const m = loadManifest(harnessName);
+  const harnessLeaf = m.harnessDir;
+  const manifestDir = m.plugin?.manifestDir ?? `${harnessLeaf}-plugin`;
+  const kind = m.plugin?.kind ?? "store";
+  return { manifestDir, harnessLeaf, kind };
+}
+
+// Render ONE plugin's projection for ONE harness into `outDir`. Pure builder —
+// no logging, no dist-path assumptions — so both the write path (into dist/) and
+// the --check path (into a temp dir, then byte-compare) call it identically.
+function buildPluginProjection(pluginName: string, harnessName: string, outDir: string): void {
+  const pluginSrc = join(PLUGINS_ROOT, pluginName);
+  const manifest = JSON.parse(readFileSync(join(pluginSrc, ".aidlc-plugin", "plugin.json"), "utf-8"));
+  const version = manifest.version || "0.0.1";
+  const author = manifest.author || { name: "AIDLC" };
+  const description = manifest.description || "";
+  const target = pluginTargetFor(harnessName);
+  if (!target) throw new Error(`no plugin target for harness "${harnessName}" (missing manifest)`);
+  const { manifestDir, harnessLeaf, kind } = target;
+  const templateHooks = join(REPO_ROOT, "scripts", "plugin-hooks-template");
+  const contentDirs = ["stages", "sensors", "tools", "contributions"];
+
+  if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
+  mkdirSync(outDir, { recursive: true });
+
+  // 1. Host-native manifest (.claude-plugin / .codex-plugin / .kiro-plugin).
+  const hostManifestDir = join(outDir, manifestDir);
+  mkdirSync(hostManifestDir, { recursive: true });
+  writeFileSync(
+    join(hostManifestDir, "plugin.json"),
+    JSON.stringify({ name: `aidlc-${pluginName}`, version, description, author }, null, 2) + "\n"
+  );
+
+  // 2. Marketplace catalogue entry.
+  writeFileSync(
+    join(hostManifestDir, "marketplace.json"),
+    JSON.stringify({
+      name: "aidlc-plugins",
+      owner: author,
+      description: "AIDLC plugin catalogue.",
+      plugins: [{ name: `aidlc-${pluginName}`, source: ".", version, description }],
+    }, null, 2) + "\n"
+  );
+
+  // 3. The one bun compose hook + per-harness wiring. The hook command's only
+  //    shell job is finding bun on a bare PATH (PATH, then ~/.bun/bin); all
+  //    compose logic is in compose.ts. Claude populates CLAUDE_PLUGIN_ROOT,
+  //    Codex PLUGIN_ROOT; AIDLC_HARNESS_DIR targets the right harness tree.
+  const hooksDir = join(outDir, "hooks");
+  mkdirSync(hooksDir, { recursive: true });
+  for (const f of readdirSync(templateHooks)) cpSync(join(templateHooks, f), join(hooksDir, f));
+  const rootExpr = harnessName === "claude" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";
+  // Resolve bun on a bare PATH (PATH, then ~/.bun/bin). If neither is executable,
+  // exit 0 with a note rather than running a non-existent binary — the pre-fold
+  // compose.sh skipped gracefully, and a hard 127 would fire on every SessionStart
+  // (including non-AIDLC projects that merely have the plugin installed). S1.
+  const bunExpr =
+    'BUN=$(command -v bun 2>/dev/null || true); ' +
+    '[ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"; ' +
+    '[ -z "$BUN" ] && { echo "aidlc plugin compose: bun not found, skipping" >&2; exit 0; }';
+  const command = `sh -c '${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${rootExpr}/hooks/compose.ts"'`;
+
+  if (kind === "kiro") {
+    writeFileSync(
+      join(hooksDir, "aidlc-plugin-compose.kiro.hook"),
+      JSON.stringify({
+        version: "1.0.0",
+        enabled: true,
+        name: `aidlc-${pluginName}-compose`,
+        description: `Composes the ${pluginName} AIDLC plugin on first interaction.`,
+        when: { type: "promptSubmit" },
+        then: { type: "runCommand", command },
+      }, null, 2) + "\n"
+    );
+  } else {
+    writeFileSync(
+      join(hooksDir, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{
+            hooks: [{ type: "command", command, statusMessage: `AIDLC ${pluginName}: composing plugin` }],
+          }],
+        },
+      }, null, 2) + "\n"
+    );
+  }
+
+  // 4. Copy plugin content verbatim (stages keep number/name/bundle/when).
+  for (const dir of contentDirs) {
+    const srcDir = join(pluginSrc, dir);
+    if (!existsSync(srcDir)) continue;
+    for (const file of walk(srcDir)) {
+      const outPath = join(outDir, dir, relative(srcDir, file));
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, readFileSync(file));
+    }
+  }
+}
+
+// Which harnesses get a projection = every built harness with a manifest (each
+// derives a plugin target). Derived, so a new harness is covered automatically.
+function pluginHarnessesFor(harnesses: string[]): string[] {
+  return harnesses.filter((h) => pluginTargetFor(h) !== null);
+}
+
+function emitPlugins(harnesses: string[]): void {
+  for (const pluginName of discoverPluginNames()) {
+    for (const harnessName of pluginHarnessesFor(harnesses)) {
+      buildPluginProjection(pluginName, harnessName, join(REPO_ROOT, "dist", "plugins", pluginName, harnessName));
+      console.log(`[plugin:${pluginName}] emitted dist/plugins/${pluginName}/${harnessName}/`);
+    }
+  }
+}
+
+// --check for plugins: build each projection into a temp dir and byte-compare
+// against the committed dist/plugins/ tree — the same drift guard writeHarness
+// gets, closing the gap where a hand-edited plugin dist passed CI silently.
+// `full` = this is a whole-repo check (every harness), so the top-level orphan
+// sweep is meaningful; a NAMED single-harness check (`package.ts codex --check`)
+// passes false, since the other harnesses' committed projections are not orphans
+// then — they're simply out of this run's scope.
+function checkPlugins(harnesses: string[], full: boolean): string[] {
+  const problems: string[] = [];
+  const tmp = mkdtempSync(join(tmpdir(), "aidlc-pkg-plugins-"));
+  const plugins = discoverPluginNames();
+  try {
+    for (const pluginName of plugins) {
+      for (const harnessName of pluginHarnessesFor(harnesses)) {
+        const committed = join(REPO_ROOT, "dist", "plugins", pluginName, harnessName);
+        const built = join(tmp, pluginName, harnessName);
+        buildPluginProjection(pluginName, harnessName, built);
+        problems.push(...diffTrees(built, committed, `plugins/${pluginName}/${harnessName}`));
+      }
+    }
+    // Top-level orphan sweep (whole-repo check only): a plugin dir deleted from
+    // plugins/ (or a stray harness subdir the build no longer emits) leaves an
+    // unguarded committed dist/plugins/<name>/ tree the per-plugin loop never
+    // visits. Flag any committed plugin/harness dir with no live source.
+    if (full) {
+      const distPlugins = join(REPO_ROOT, "dist", "plugins");
+      const liveHarnesses = new Set(pluginHarnessesFor(harnesses));
+      if (existsSync(distPlugins)) {
+        for (const name of readdirSync(distPlugins)) {
+          if (!plugins.includes(name)) {
+            problems.push(`ORPHAN in dist: plugins/${name}/ (no plugins/${name}/ source — delete the committed tree)`);
+            continue;
+          }
+          for (const h of readdirSync(join(distPlugins, name))) {
+            if (!liveHarnesses.has(h)) {
+              problems.push(`ORPHAN in dist: plugins/${name}/${h}/ (no such harness — delete the committed tree)`);
+            }
+          }
+        }
+      }
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  return problems;
+}
+
+// `package.ts plugin build <plugin> <harness> <outDir>` — render ONE plugin
+// projection into an arbitrary dir. The target-dir seam that lets t188 (and any
+// caller) exercise the real emitter WITHOUT touching the committed dist/plugins/
+// trees — writeHarness/emitPlugins rmSync + rewrite dist, which a parallel test
+// tier must never do (it masks drift and races sibling tests). Pure builder call.
+if (argv[0] === "plugin" && argv[1] === "build") {
+  const rest = argv.slice(2).filter((a) => a !== "--force");
+  const force = argv.includes("--force");
+  const [pluginName, harnessName, outDir] = rest;
+  if (!pluginName || !harnessName || !outDir) {
+    console.error("usage: package.ts plugin build <plugin> <harness> <outDir> [--force]");
+    process.exit(1);
+  }
+  // Proper usage errors, never a raw ENOENT/rmSync stack (round-3).
+  if (!discoverPluginNames().includes(pluginName)) {
+    console.error(`unknown plugin "${pluginName}" (have: ${discoverPluginNames().join(", ") || "none"})`);
+    process.exit(1);
+  }
+  const target = pluginTargetFor(harnessName);
+  if (!target) {
+    console.error(`unknown plugin harness "${harnessName}" (have: ${discoverHarnessNames().join(", ")})`);
+    process.exit(1);
+  }
+  // outDir GUARD: buildPluginProjection rmSync's outDir first, so refuse a
+  // non-empty dir that is not itself a prior projection unless --force —
+  // `plugin build test-pro claude .` must not wipe cwd.
+  // Strip trailing separators BEFORE resolving: `lstatSync("<link>/")` resolves
+  // THROUGH a symlink (so a trailing-slash symlink outDir bypassed the symlink
+  // refusal below and wiped the target — merge-review ask #2).
+  const outArg = outDir.replace(/[/\\]+$/, "") || outDir;
+  const resolvedOut = isAbsolute(outArg) ? outArg : join(process.cwd(), outArg);
+  // A symlink path entry (including a BROKEN one, which existsSync reports as
+  // false because it follows the link) would slip past the existsSync guard and
+  // make mkdirSync throw a raw EEXIST stack. lstatSync sees the link itself —
+  // refuse any symlink outDir with a proper usage error (round-6).
+  let outLstat: ReturnType<typeof statSync> | null = null;
+  try { outLstat = lstatSync(resolvedOut); } catch { outLstat = null; }
+  if (outLstat?.isSymbolicLink()) {
+    console.error(`refusing to build into "${outDir}" — it is a symlink; point at a real directory path.`);
+    process.exit(1);
+  }
+  if (existsSync(resolvedOut)) {
+    // A FILE (not a directory) outDir would make readdirSync throw a raw ENOTDIR
+    // stack — give a proper usage error instead (the round-3 guard's promise).
+    if (!statSync(resolvedOut).isDirectory()) {
+      console.error(`refusing to build into "${outDir}" — it is a file, not a directory.`);
+      process.exit(1);
+    }
+    if (readdirSync(resolvedOut).length > 0) {
+      // A prior projection is overwritable; anything else needs --force. The
+      // marker is NOT just "a .claude-plugin/ dir exists" — every real Claude
+      // plugin has one, so that false-positive let `plugin build ... .` wipe a
+      // FOREIGN plugin checkout silently (merge-review ask #1). Require the
+      // marker's plugin.json to parse AND carry an `aidlc-`-prefixed name (what
+      // our own projections emit), so only a genuine AIDLC projection qualifies.
+      const isPriorProjection = (() => {
+        try {
+          const mf = join(resolvedOut, target.manifestDir, "plugin.json");
+          if (!existsSync(mf)) return false;
+          const m = JSON.parse(readFileSync(mf, "utf-8"));
+          return typeof m?.name === "string" && m.name.startsWith("aidlc-");
+        } catch { return false; }
+      })();
+      if (!isPriorProjection && !force) {
+        console.error(
+          `refusing to build into non-empty "${outDir}" — it is not a prior AIDLC plugin projection ` +
+          `(no ${target.manifestDir}/plugin.json with an aidlc- name). Pass --force to overwrite, or point at a fresh/empty dir.`
+        );
+        process.exit(1);
+      }
+    }
+  }
+  buildPluginProjection(pluginName, harnessName, resolvedOut);
+  process.exit(0);
+}
+
 const check = argv.includes("--check");
 const named = argv.find((a) => !a.startsWith("--"));
 // Default targets are DISCOVERED from harness/ (one manifest = one harness); a
@@ -638,6 +911,9 @@ if (absent.length > 0) console.log(`(skipping harness(es) without a manifest: ${
 if (check) {
   let problems: string[] = [];
   for (const n of present) problems = problems.concat(checkHarness(n));
+  // drift-guard dist/plugins/ too; the top-level orphan sweep runs only on a
+  // whole-repo check (no named target), never a single-harness one.
+  problems = problems.concat(checkPlugins(present, !named));
   if (problems.length > 0) {
     console.error(`\npackage --check FAILED (${problems.length} problem(s)):`);
     for (const p of problems.slice(0, 40)) console.error("  " + p);
@@ -646,4 +922,6 @@ if (check) {
   console.log("package --check: all harness trees in sync with core/ + harness/.");
 } else {
   for (const n of present) writeHarness(n);
+  // Emit plugin projections (the hybrid: per-harness host plugins from plugins/<name>/)
+  emitPlugins(present);
 }

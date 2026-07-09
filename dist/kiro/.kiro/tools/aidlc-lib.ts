@@ -3267,13 +3267,20 @@ export function parseStageFrontmatter(
   ]);
   const CONSUMES_KEY = "consumes";
 
+  // `when` is a nested single-key map (when:\n  producer-in-plan: <slug>), not a
+  // scalar — parse it separately below. Skip it in the scalar loop so it isn't
+  // captured as an empty string.
+  const WHEN_KEY = "when";
+
   for (const key of topLevelKeys) {
     if (key === CONSUMES_KEY) continue;
-    if (key === "produces_kinds") continue; // parsed below; the scalar loop would stamp it ""
+    if (key === WHEN_KEY) continue;
     if (ARRAY_KEYS.has(key)) continue;
-    // optional_produces is a presence-gated array field parsed below; skip it
-    // here so the scalar loop does not stamp it with an empty-string value.
+    // optional_produces and required_sections are presence-gated array fields
+    // parsed below; skip them here so the scalar loop does not stamp them with
+    // an empty-string value.
     if (key === "optional_produces") continue;
+    if (key === "required_sections") continue;
     // The key was discovered at the start of some line, so it IS
     // present. scalarField returns "" for both absent AND empty-quoted
     // ("") — since we know it's present, assign the result
@@ -3303,12 +3310,14 @@ export function parseStageFrontmatter(
     obj.optional_produces = listField(fm, "optional_produces");
   }
 
-  // produces_kinds is presence-gated: only assigned when the top-level key
-  // exists, so an unannotated stage compiles with the property ABSENT (not an
-  // empty object), preserving byte-identical emit for every stage that does
-  // not use the map.
-  if (topLevelKeys.has("produces_kinds")) {
-    obj.produces_kinds = mapOfListsField(fm, "produces_kinds");
+  // required_sections is an OPTIONAL array field (plugin contribution mechanism
+  // §6): named `## ` H2 sections a stage's output must contain. Absent key ->
+  // absent property, so core stages that don't author it stay byte-identical.
+  // Without this, an authored `required_sections:` block list would fall to the
+  // scalar loop and parse as the string "- ...", failing schema validation with
+  // "required_sections must be array, got string".
+  if (topLevelKeys.has("required_sections")) {
+    obj.required_sections = listField(fm, "required_sections");
   }
 
   // reviewer_max_iterations is the one numeric scalar field. The generic
@@ -3335,6 +3344,23 @@ export function parseStageFrontmatter(
     const raw = obj.workspace_requires;
     if (raw === "true" || raw === "false") {
       obj.workspace_requires = raw === "true";
+    }
+  }
+
+  // `when` — nested single-key predicate map. Present only on plugin stages
+  // (plugin mechanism, Layer 4). Parse the one indented `<predicate>: <value>`
+  // line into an object so the schema validator sees the map it expects; absent
+  // means the key never appears. Only assigned when the key was discovered.
+  if (topLevelKeys.has(WHEN_KEY)) {
+    // Match the `when:` line and the immediately-following indented child line.
+    const whenMatch = fm.match(/^when:\s*\n\s+([a-z][a-z0-9-]*)\s*:\s*(.+?)\s*$/m);
+    if (whenMatch) {
+      obj.when = { [whenMatch[1]]: whenMatch[2] };
+    } else {
+      // inline form `when: {producer-in-plan: X}` or malformed — capture the raw
+      // scalar so the validator can reject a non-map shape loudly.
+      const inline = fm.match(/^when:\s*\{\s*([a-z][a-z0-9-]*)\s*:\s*([^}]+?)\s*\}\s*$/m);
+      obj.when = inline ? { [inline[1]]: inline[2].trim() } : scalarField(fm, WHEN_KEY);
     }
   }
 

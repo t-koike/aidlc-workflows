@@ -457,9 +457,21 @@ async function runSpawnCapture(
 
 async function runBunTestFile(file: string, parallelMode = false): Promise<void> {
   const base = basename(file);
-  const name = base.replace(/\.test\.ts$/, "");
+  // Result meta is keyed by `name`. For tests under tests/<level>/ the basename
+  // is unique, but plugin content tests live at plugins/<plugin>/tests/ and every
+  // plugin ships `plugin.test.ts` (the fixture header says "copy this shape"), so
+  // a bare-basename key would collide — last writer wins and a FAILING suite gets
+  // erased from the summary (the same result-masking class as the round-2 t188
+  // gap). Key a plugin test by its plugin dir so two `plugin.test.ts` never clash.
+  const pluginMatch = file.replace(/\\/g, "/").match(/\/plugins\/([^/]+)\/tests\//);
+  const name = pluginMatch
+    ? `plugin-${pluginMatch[1]}-${base.replace(/\.test\.ts$/, "")}`
+    : base.replace(/\.test\.ts$/, "");
 
-  if (filterRegex && !filterRegex.test(base)) return;
+  // Match the filter against BOTH the basename and the qualified name shown in
+  // output/summary — a user who copies the displayed `plugin-<plugin>-<stem>`
+  // name into --filter would otherwise select nothing and see a green run (round-5).
+  if (filterRegex && !filterRegex.test(base) && !filterRegex.test(name)) return;
 
   if (shouldSkipForClaude(file)) {
     process.stdout.write(`\n=== SKIP ${base} ===\n`);
@@ -503,7 +515,10 @@ async function runBunTestFile(file: string, parallelMode = false): Promise<void>
 
   if (args.debug) {
     process.stdout.write(`Debug artifacts for ${base}:\n`);
-    process.stdout.write(`  log: ${displayLogDirPath(join(logDir, `${base}.log`))}\n`);
+    // Log filename keys on the QUALIFIED name (not bare basename): two plugins
+    // both shipping plugin.test.ts would otherwise write the same log file, and
+    // the failing one's detail would be overwritten by a passing sibling (round-5).
+    process.stdout.write(`  log: ${displayLogDirPath(join(logDir, `${name}.log`))}\n`);
     process.stdout.write(`  driver traces: ${displayLogDirPath(logDir)}/{sdk,tui,kiro-acp}-drive-*.ndjson\n`);
   }
 
@@ -543,7 +558,7 @@ async function runBunTestFile(file: string, parallelMode = false): Promise<void>
   rmSync(junitXml, { force: true });
 
   if (args.verbose) {
-    const logFile = join(logDir, `${base}.log`);
+    const logFile = join(logDir, `${name}.log`);
     writeFileSync(
       logFile,
       [
@@ -561,15 +576,48 @@ async function runBunTestFile(file: string, parallelMode = false): Promise<void>
   }
 }
 
+// Plugin content tests live beside each plugin (plugins/<name>/tests/*.test.ts),
+// NOT under tests/<level>/, so the level-dir scan alone never discovered them —
+// the AGENTS.md "guarded by plugins/<name>/tests/" claim was hollow. They run the
+// framework's real validators against plugin content, which is integration-grade,
+// so they join the integration tier. Discovered (any plugins/*/tests/), so a new
+// plugin's suite is picked up with zero runner edits.
+function pluginTestFiles(): string[] {
+  const pluginsRoot = join(SCRIPT_DIR, "..", "plugins");
+  if (!existsSync(pluginsRoot)) return [];
+  const out: string[] = [];
+  for (const name of readdirSync(pluginsRoot).sort()) {
+    const testsDir = join(pluginsRoot, name, "tests");
+    if (!existsSync(testsDir)) continue;
+    for (const f of readdirSync(testsDir).filter((f) => f.endsWith(".test.ts")).sort()) {
+      out.push(join(testsDir, f));
+    }
+  }
+  return out;
+}
+
 function levelFiles(level: Level, excludes: string[] = []): string[] {
   const dir = join(SCRIPT_DIR, level);
-  if (!existsSync(dir)) return [];
   const excludeSet = new Set(excludes);
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".test.ts"))
-    .filter((f) => !excludeSet.has(f))
-    .sort()
-    .map((f) => join(dir, f));
+  const files = existsSync(dir)
+    ? readdirSync(dir)
+        .filter((f) => f.endsWith(".test.ts"))
+        .filter((f) => !excludeSet.has(f))
+        .sort()
+        .map((f) => join(dir, f))
+    : [];
+  // Fold plugin content tests into the integration tier. Exclusion is keyed by
+  // the plugin-dir-qualified name (`plugin-<plugin>-<stem>`), NOT the bare
+  // basename — every plugin ships `plugin.test.ts`, so a basename exclude would
+  // drop all plugins' suites at once.
+  if (level === "integration") {
+    files.push(...pluginTestFiles().filter((f) => {
+      const m = f.replace(/\\/g, "/").match(/\/plugins\/([^/]+)\/tests\//);
+      const qualified = m ? `plugin-${m[1]}-${basename(f).replace(/\.test\.ts$/, "")}` : basename(f);
+      return !excludeSet.has(qualified);
+    }));
+  }
+  return files;
 }
 
 async function runFileBand(
@@ -688,7 +736,7 @@ function writeVerboseSummary(): void {
     for (const row of resultRows) {
       if (row.status !== "FAIL") continue;
       failures.push(`FAIL: ${row.name} (${row.failed} failed assertions)`);
-      const logFile = join(logDir, `${row.name}.test.ts.log`);
+      const logFile = join(logDir, `${row.name}.log`);
       if (existsSync(logFile)) {
         // bun:test marks a failing case with a line that STARTS WITH `(fail)`
         // (e.g. `(fail) my test name [0.4ms]`) and prints the assertion detail
