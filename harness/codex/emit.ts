@@ -3,7 +3,7 @@
 // The unified packager copies core/ → dist/codex/.codex/ (rules → aidlc-rules)
 // and runs graph compile, then calls this emit() for everything that is CODE,
 // not declarative data: the Codex config, hook wiring, trust pre-seed, the
-// AGENTS.md merge, the 13 agent TOML transpositions, and the .agents/skills/
+// AGENTS.md merge, the per-agent TOML transpositions, and the .agents/skills/
 // tree (orchestrator + generated runners + session skills + openai.yaml guards).
 //
 // Ported faithfully from the proven scripts/package-codex.ts emission half
@@ -21,6 +21,7 @@ import { dirname, join, relative } from "node:path";
 import type { EmitContext, EmitResult } from "../../scripts/manifest-types.ts";
 import { renderOnboarding } from "../../scripts/onboarding.ts";
 import onboardingFills from "./onboarding.fills.ts";
+import { projectTier } from "../../core/tools/aidlc-tiers.ts";
 
 // ---------------------------------------------------------------------------
 // Hook wiring (kiro-normative shape: register ONLY events with a real core-hook
@@ -57,8 +58,10 @@ function emitConfigToml(): string {
   return `# dist/codex shipped config — copy into the project's .codex/config.toml
 # (trusted projects) or merge into ~/.codex/config.toml.
 #
-# Model: D-7 map (orchestrator opus-class -> gpt-5.5; agent sonnet-class ->
-# gpt-5.4). D-9: Amazon Bedrock is the shipped default provider (web_search is
+# Model: these session defaults are what judgment-tier agent roles inherit
+# (their TOMLs omit model/model_reasoning_effort by design - see the tier
+# projection); balanced/templated roles pin gpt-5.4 per the tier table.
+# D-9: Amazon Bedrock is the shipped default provider (web_search is
 # unavailable there; the market-research stage degrades gracefully). For
 # OpenAI-auth setups, comment out model_provider and the [model_providers]
 # block.
@@ -201,13 +204,19 @@ function emitTrustSeed(): string {
   );
 }
 
-// --- Agent transposition: 13 persona .md → .codex/agents/*.toml -------------
-const D7_MODEL_MAP: Record<string, string> = {
-  opus: "openai.gpt-5.5",
-  sonnet: "openai.gpt-5.4",
-};
+// --- Agent transposition: persona .md → .codex/agents/*.toml ----------------
+// The old D7 model map is DERIVED from the tier projection module. Codex reads
+// `tier:` from the core agent .md (authoritative source of truth) and looks up
+// {model, effort} via projectTier. A null projected value means the TOML key
+// is OMITTED: the spawned role then falls back to the shipped config.toml
+// session defaults (live-verified on codex-cli 0.139.0 - the doctor floor -
+// AND 0.142.5: a role TOML without `model` spawns on the config.toml model +
+// effort). judgment omits both keys;
+// balanced pins a model but inherits effort; templated pins both.
 
 function parseAgentMd(raw: string): { fm: Record<string, string>; body: string } {
+  // BOM tolerance, matching the packager's agent reader and the rule parser.
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return { fm: {}, body: raw };
   const fm: Record<string, string> = {};
@@ -233,7 +242,10 @@ function tomlMultiline(s: string): string {
 // {path, content} list, then writes (or, under check, returns the diff).
 // ---------------------------------------------------------------------------
 export default function emit(ctx: EmitContext): EmitResult {
-  const { coreRoot, harnessRoot, distRoot, substituteToken } = ctx;
+  // tierCap is the packager's resolved pack-time cap, passed through so the
+  // emit-owned TOML projections use the SAME cap as every declarative
+  // projection - never re-resolved here.
+  const { coreRoot, harnessRoot, distRoot, substituteToken, tierCap } = ctx;
   const DCODEX = join(distRoot, ".codex"); // dist/codex/.codex
   const SKILLS_DST = join(distRoot, ".agents", "skills");
 
@@ -269,12 +281,24 @@ export default function emit(ctx: EmitContext): EmitResult {
     const { fm, body } = parseAgentMd(raw);
     const name = fm.name ?? "";
     const description = (fm.description ?? "").replace(/\s+/g, " ").trim();
-    const model = D7_MODEL_MAP[fm.model ?? ""] ?? D7_MODEL_MAP.opus;
+    // The authored source of truth is `tier:` on the core .md; the packager's
+    // frontmatter transform doesn't run against emit.ts (Codex reads directly
+    // from core), so project tier -> {model, effort} here. An agent .md
+    // without a tier: line is an authoring bug - fail the build loudly.
+    // parseAgentMd's value capture keeps trailing whitespace; trim so an
+    // invisible trailing space cannot fail the codex leg alone (the
+    // packager's own reader strips it for the other harnesses).
+    const tier = fm.tier?.trim();
+    if (!tier) throw new Error(`${mdPath}: agent frontmatter has no tier: line.`);
+    const proj = projectTier(tier, "codex", tierCap); // throws on unknown tier
     const instructions = rewriteProse(body);
+    const modelLines =
+      (proj.model !== null ? `model = "${proj.model}"\n` : "") +
+      (proj.effort !== null ? `model_reasoning_effort = "${proj.effort}"\n` : "");
     return (
       `name = "${name}"\n` +
       `description = "${description.replace(/"/g, '\\"')}"\n` +
-      `model = "${model}"\n` +
+      modelLines +
       `developer_instructions = ${tomlMultiline(instructions.trim())}\n`
     );
   }
@@ -316,7 +340,7 @@ export default function emit(ctx: EmitContext): EmitResult {
   emissions.push({ path: join(DCODEX, "trust-seed.toml"), content: emitTrustSeed });
   emissions.push({ path: join(distRoot, "AGENTS.md"), content: emitAgentsMd });
 
-  // 13 agent TOMLs from core/agents/*.md
+  // agent TOMLs from core/agents/*.md (one per shipped persona)
   const agentsDir = join(coreRoot, "agents");
   for (const f of readdirSync(agentsDir).filter((x) => x.endsWith(".md")).sort()) {
     emissions.push({

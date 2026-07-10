@@ -1,62 +1,66 @@
 // covers: file:agents/aidlc-product-agent.md, file:agents/aidlc-design-agent.md, file:agents/aidlc-delivery-agent.md, file:agents/aidlc-architect-agent.md, file:agents/aidlc-aws-platform-agent.md, file:agents/aidlc-compliance-agent.md, file:agents/aidlc-devsecops-agent.md, file:agents/aidlc-developer-agent.md, file:agents/aidlc-quality-agent.md, file:agents/aidlc-pipeline-deploy-agent.md, file:agents/aidlc-operations-agent.md
 //
-// t04 — shipped agent-persona FRONTMATTER contract. Migrated from
-// tests/unit/t04-agent-frontmatter.sh (TAP plan 55 — 5 distinct assertions
-// per agent across the 11 domain-expert personas). The .sh resolved
-// AGENTS_DIR = dist/claude/.claude/agents and, for each `aidlc-<agent>-agent.md`,
-// grepped the frontmatter for five invariants.
+// t04 - AUTHORED agent-persona frontmatter contract. Migrated from
+// tests/unit/t04-agent-frontmatter.sh (TAP plan 55 - 5 distinct assertions
+// per agent across the 11 domain-expert personas). Originally the .sh
+// resolved dist/claude and grepped for a per-agent `model:` pin; the authored
+// contract is now `tier:` on the CORE agent .md (model/effort became
+// per-harness projection outputs - see core/tools/aidlc-tiers.ts and the
+// companion t216, which pins the PROJECTED dist/claude contract).
 //
-// Mechanism: none. This is a pure structural/schema check over the shipped
-// bytes — does each agent persona's YAML frontmatter satisfy the registration
-// contract? No process boundary, no argv/exit/stdout seam, no LLM, zero tokens.
-// We resolve the same tree the .sh resolved (AIDLC_SRC = <repo>/dist/claude/.claude,
-// fixtures.ts:42) and read + parse each .md in-process. The .sh's per-line
-// `grep` anchors are replaced with a frontmatter parser that SCOPES every
-// field assertion to the YAML block (between the opening and closing `---`),
-// which is STRONGER than a whole-file grep that could match prose in the body.
+// Mechanism: none. This is a pure structural/schema check over the authored
+// bytes - does each agent persona's YAML frontmatter satisfy the registration
+// contract? No process boundary, no argv/exit/stdout seam, no LLM, zero
+// tokens. We read + parse each core/agents/*.md in-process. The .sh's
+// per-line `grep` anchors are replaced with a frontmatter parser that SCOPES
+// every field assertion to the YAML block (between the opening and closing
+// `---`), which is STRONGER than a whole-file grep that could match prose in
+// the body.
 //
-// Subject under test (dist/claude/.claude/agents/aidlc-<agent>-agent.md):
-//   - name:           must equal `aidlc-<agent>-agent` (filename ⇄ name parity;
-//                     Claude Code resolves a subagent by its `name`).
-//   - description:    must be present (non-empty) — the routing summary.
-//   - allowedTools:   must be ABSENT — a silently-ignored field removed in
+// Subject under test (core/agents/aidlc-<agent>-agent.md):
+//   - name:           must equal `aidlc-<agent>-agent` (filename <-> name parity;
+//                     every harness resolves a subagent by its `name`).
+//   - description:    must be present (non-empty) - the routing summary.
+//   - allowedTools:   must be ABSENT - a silently-ignored field removed in
 //                     v0.5.4 (.sh L40-45). Its reappearance is a regression.
-//   - disallowedTools: must contain `Task` — subagents must not spawn subagents
+//   - disallowedTools: must contain `Task` - subagents must not spawn subagents
 //                     (single-level constraint; the body also carries the
 //                     "Do NOT use the Task tool" banner).
-//   - model:          must equal the documented per-agent value
-//                     (opus = high-judgment / high-blast-radius work;
-//                      sonnet = templated config/scaffolding;
-//                      docs/reference/05-agent-system.md, .sh L11-19).
-//                     opus  : architect, product, design, developer, quality,
-//                             devsecops, compliance, aws-platform
-//                     sonnet: delivery, pipeline-deploy, operations
+//   - tier:           must equal the documented per-agent value
+//                     (judgment = multi-constraint reasoning under ambiguity,
+//                      output cascades downstream;
+//                      balanced = reviewer-shaped work against explicit criteria;
+//                      templated = pattern-following output, methodology in
+//                      knowledge; docs/reference/05-agent-system.md).
+//                     judgment : architect, product, design, developer,
+//                                quality, devsecops, compliance, aws-platform
+//                     templated: delivery, pipeline-deploy, operations
 //
-// Test-design note (house style): assert the OBSERVABLE shipped contract the
-// .sh asserted — frontmatter field presence/absence and exact values — against
-// the real bytes on disk. The expected model table is hard-coded here
-// independently of the source (mirrors the .sh's `expected_model()` case), so
-// the test pins the policy rather than echoing whatever the file says.
+// Test-design note (house style): assert the OBSERVABLE authored contract -
+// frontmatter field presence/absence and exact values - against the real
+// bytes on disk. The expected tier table is hard-coded here independently of
+// the source (mirrors the .sh's `expected_model()` case), so the test pins
+// the policy rather than echoing whatever the file says.
 //
 // Old TAP -> new test parity (1:1; the .sh emitted 5 `ok` lines PER agent in a
-// single loop — 5 × 11 = 55. Here each of the 5 invariants is one test() that
+// single loop - 5 x 11 = 55. Here each of the 5 invariants is one test() that
 // asserts across ALL 11 agents via expect() per agent, so every one of the 55
 // .sh rows maps to a named expect(). The final test re-counts to pin the plan):
 //   .sh L27-31 (name: matches filename)               -> "name: equals aidlc-<agent>-agent (filename parity)" [11 expects]
 //   .sh L34-38 (description: present)                  -> "description: is present and non-empty"            [11 expects]
 //   .sh L41-45 (allowedTools: absent)                  -> "allowedTools: is ABSENT (ignored field removed in v0.5.4)" [11 expects]
 //   .sh L48-52 (disallowedTools contains Task)         -> "disallowedTools: contains Task (no nested subagents)" [11 expects]
-//   .sh L54-61 (model matches expected)                -> "model: matches the documented opus/sonnet split" [11 expects]
-//   .sh L21    plan 55                                  -> "covers EXACTLY 11 agents × 5 invariants = 55 frontmatter assertions (TAP plan parity)"
+//   .sh L54-61 (model matches expected)                -> "tier: matches the documented judgment/templated split" [11 expects]
+//   .sh L21    plan 55                                  -> "covers EXACTLY 11 agents x 5 invariants = 55 frontmatter assertions (TAP plan parity)"
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AIDLC_SRC } from "../harness/fixtures.ts";
+import { REPO_ROOT } from "../harness/fixtures.ts";
 
-// AIDLC_SRC === <repo>/dist/claude/.claude — the same tree the .sh resolved as
-// AGENTS_DIR's parent.
-const AGENTS_DIR = join(AIDLC_SRC, "agents");
+// The AUTHORED source of truth: core/agents/. (t216 pins the projected
+// dist/claude tree; this test pins what harness engineers actually edit.)
+const AGENTS_DIR = join(REPO_ROOT, "core", "agents");
 
 // The 11 domain-expert agents, in the order the .sh's `AGENTS=` list named them.
 const AGENTS = [
@@ -73,21 +77,23 @@ const AGENTS = [
   "operations",
 ] as const;
 
-// Expected model per agent -- hard-coded independently of the source,
-// mirroring the .sh's expected_model() case (L13-19). opus = high-judgment /
-// high-blast-radius; sonnet = templated config/scaffolding.
-const EXPECTED_MODEL: Record<(typeof AGENTS)[number], "opus" | "sonnet"> = {
-  product: "opus",
-  design: "opus",
-  delivery: "sonnet",
-  architect: "opus",
-  "aws-platform": "opus",
-  compliance: "opus",
-  devsecops: "opus",
-  developer: "opus",
-  quality: "opus",
-  "pipeline-deploy": "sonnet",
-  operations: "sonnet",
+// Expected tier per agent -- hard-coded independently of the source,
+// mirroring the .sh's expected_model() case (L13-19). judgment =
+// multi-constraint reasoning / high blast radius; templated = pattern-
+// following config/scaffolding. (balanced covers the two review-only agents,
+// which are outside this 11-agent roster - see t216 for the full 14.)
+const EXPECTED_TIER: Record<(typeof AGENTS)[number], "judgment" | "balanced" | "templated"> = {
+  product: "judgment",
+  design: "judgment",
+  delivery: "templated",
+  architect: "judgment",
+  "aws-platform": "judgment",
+  compliance: "judgment",
+  devsecops: "judgment",
+  developer: "judgment",
+  quality: "judgment",
+  "pipeline-deploy": "templated",
+  operations: "templated",
 };
 
 const agentFile = (agent: string): string =>
@@ -114,7 +120,7 @@ function hasKeyLine(fm: string, key: string): boolean {
 
 describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontmatter.sh, plan 55)", () => {
   // .sh L27-31: `grep -q "^name:.*aidlc-${agent}-agent"`.
-  test("name: equals aidlc-<agent>-agent (filename parity) [.sh test 1 ×11]", () => {
+  test("name: equals aidlc-<agent>-agent (filename parity) [.sh test 1 x11]", () => {
     for (const agent of AGENTS) {
       // Sanity: the file the .sh grepped must exist.
       expect(existsSync(agentFile(agent))).toBe(true);
@@ -128,7 +134,7 @@ describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontm
   });
 
   // .sh L34-38: `grep -q "^description:"`.
-  test("description: is present and non-empty [.sh test 2 ×11]", () => {
+  test("description: is present and non-empty [.sh test 2 x11]", () => {
     for (const agent of AGENTS) {
       const fm = frontmatter(agent);
       expect(
@@ -136,7 +142,7 @@ describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontm
         `aidlc-${agent}-agent.md: missing description: field`,
       ).toBe(true);
       // STRONGER: the field must actually carry content (block-scalar `>` or
-      // inline) — not a bare `description:` with nothing after it. The first
+      // inline) - not a bare `description:` with nothing after it. The first
       // description line plus any following indented continuation lines must
       // contain non-whitespace.
       const after = fm.split(/^description:/m)[1] ?? "";
@@ -145,11 +151,11 @@ describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontm
   });
 
   // .sh L41-45: `allowedTools:` must be ABSENT (ignored field removed in v0.5.4).
-  test("allowedTools: is ABSENT (ignored field removed in v0.5.4) [.sh test 3 ×11]", () => {
+  test("allowedTools: is ABSENT (ignored field removed in v0.5.4) [.sh test 3 x11]", () => {
     for (const agent of AGENTS) {
       const fm = frontmatter(agent);
       // The .sh grepped `^allowedTools:` and FAILED (not_ok) if it matched.
-      // Note: `^allowedTools:` must NOT also trip on `disallowedTools:` — the
+      // Note: `^allowedTools:` must NOT also trip on `disallowedTools:` - the
       // anchored regex begins-of-line so `disallowedTools:` is not matched.
       expect(
         hasKeyLine(fm, "allowedTools"),
@@ -159,7 +165,7 @@ describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontm
   });
 
   // .sh L48-52: `grep -q "^disallowedTools:.*Task"`.
-  test("disallowedTools: contains Task (no nested subagents) [.sh test 4 ×11]", () => {
+  test("disallowedTools: contains Task (no nested subagents) [.sh test 4 x11]", () => {
     for (const agent of AGENTS) {
       const fm = frontmatter(agent);
       const m = fm.match(/^disallowedTools:\s*(.+)$/m);
@@ -171,27 +177,36 @@ describe("t04 agent-persona frontmatter contract (migrated from t04-agent-frontm
     }
   });
 
-  // .sh L54-61: model matches expected_model().
-  test("model: matches the documented opus/sonnet split [.sh test 5 x11]", () => {
+  // .sh L54-61: the authored dial matches the documented policy. The dial is
+  // now `tier:` - a raw `model:`/`effort:` in AUTHORED frontmatter would
+  // bypass the projection, so both are pinned ABSENT alongside the value pin.
+  test("tier: matches the documented judgment/templated split [.sh test 5 x11]", () => {
     for (const agent of AGENTS) {
       const fm = frontmatter(agent);
-      // The .sh used `awk -F': *' '/^model:/ {print $2; exit}'`.
-      const m = fm.match(/^model:\s*(\S+)/m);
-      expect(m, `aidlc-${agent}-agent.md: no model: line`).not.toBeNull();
-      expect(m?.[1]).toBe(EXPECTED_MODEL[agent]);
+      const m = fm.match(/^tier:\s*(\S+)/m);
+      expect(m, `aidlc-${agent}-agent.md: no tier: line`).not.toBeNull();
+      expect(m?.[1]).toBe(EXPECTED_TIER[agent]);
+      expect(
+        hasKeyLine(fm, "model"),
+        `aidlc-${agent}-agent.md: raw model: in AUTHORED frontmatter (projection bypass)`,
+      ).toBe(false);
+      expect(
+        hasKeyLine(fm, "effort"),
+        `aidlc-${agent}-agent.md: raw effort: in AUTHORED frontmatter (projection bypass)`,
+      ).toBe(false);
     }
   });
 
   // .sh L21: plan 55. Re-count to pin the plan and guard against an agent being
-  // silently dropped from the roster (5 invariants × 11 agents = 55 rows).
-  test("covers EXACTLY 11 agents × 5 invariants = 55 frontmatter assertions (TAP plan parity)", () => {
+  // silently dropped from the roster (5 invariants x 11 agents = 55 rows).
+  test("covers EXACTLY 11 agents x 5 invariants = 55 frontmatter assertions (TAP plan parity)", () => {
     expect(AGENTS.length).toBe(11);
-    expect(Object.keys(EXPECTED_MODEL).length).toBe(11);
+    expect(Object.keys(EXPECTED_TIER).length).toBe(11);
     const INVARIANTS_PER_AGENT = 5;
     expect(AGENTS.length * INVARIANTS_PER_AGENT).toBe(55);
-    // Every agent in the roster must have an expected-model entry (no orphan).
+    // Every agent in the roster must have an expected-tier entry (no orphan).
     for (const agent of AGENTS) {
-      expect(EXPECTED_MODEL[agent], `no expected model for ${agent}`).toBeDefined();
+      expect(EXPECTED_TIER[agent], `no expected tier for ${agent}`).toBeDefined();
     }
   });
 });

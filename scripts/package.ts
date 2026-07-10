@@ -51,10 +51,48 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import type { HarnessManifest } from "./manifest-types.ts";
 import { renderOnboarding } from "./onboarding.ts";
+import {
+  kiroModelDefaults,
+  projectTier,
+  readEnvCap,
+  readMemoryCap,
+} from "../core/tools/aidlc-tiers.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_ROOT = join(REPO_ROOT, "core");
 const HARNESS_ROOT = join(REPO_ROOT, "harness");
+
+// The pack-time tier cap, resolved ONCE for the whole build: the
+// AIDLC_TIER_CAP env var (per-invocation) beats the persistent space-memory
+// `tier_cap:` frontmatter key (core/memory org.md -> team.md -> project.md,
+// last writer wins). The env var applies to WRITE runs only - a one-shot
+// build knob. Under --check it is IGNORED: the drift guard must compare
+// what the committed dist was legitimately built from, and a stray
+// AIDLC_TIER_CAP in a CI or test runner's environment must not fail (or
+// mask) drift. The memory cap travels with the repo, so it applies in both
+// modes and keeps write and check consistent for a project that commits a
+// capped dist. The diagnostic below names the active cap and mode.
+// The `codex trust` subcommand performs NO projection (it prints trust
+// entries for the installer), so it skips cap resolution entirely - a
+// malformed cap must not break an installer command that never uses it.
+const IS_CHECK_MODE = process.argv.includes("--check");
+const IS_TRUST_MODE = process.argv[2] === "codex" && process.argv[3] === "trust";
+const ENV_CAP = IS_CHECK_MODE || IS_TRUST_MODE ? null : readEnvCap();
+const MEMORY_CAP = IS_TRUST_MODE ? null : readMemoryCap(join(CORE_ROOT, "memory"));
+const TIER_CAP = ENV_CAP ?? MEMORY_CAP;
+if (TIER_CAP) {
+  // stderr, not stdout: the `codex trust` subcommand's stdout is pasted
+  // verbatim into a config.toml and must stay clean.
+  console.error(
+    `[tier] pack-time tier cap active: ${TIER_CAP} ` +
+      `(source: ${ENV_CAP ? "AIDLC_TIER_CAP env var" : "core/memory tier_cap:"})`,
+  );
+} else if (IS_CHECK_MODE && process.env.AIDLC_TIER_CAP) {
+  console.error(
+    "[tier] AIDLC_TIER_CAP is set but IGNORED under --check " +
+      "(the env cap is a one-shot write knob; persistent caps live in core/memory)",
+  );
+}
 // The shared onboarding-doc skeleton, rendered per harness (scripts/onboarding.ts).
 const ONBOARDING_SKELETON = join(CORE_ROOT, "templates", "onboarding.md");
 const HARNESS_TOKEN = /\{\{HARNESS_DIR\}\}/g;
@@ -90,15 +128,121 @@ function applyRulesRename(s: string, harnessDir: string, rulesRename: string | n
   return s.replaceAll(`${harnessDir}/rules/`, `${harnessDir}/${rulesRename}/`);
 }
 
+// Read the authored `tier:` from an agent .md's YAML FRONTMATTER (scoped to
+// the block between the `---` fences - a `tier:` token in body prose never
+// matches). Fails loudly when the frontmatter or the key is missing: every
+// shipped agent must carry a tier, and a silent pass-through would ship an
+// unprojected agent (no model/effort keys at all) without failing the build.
+function agentTierFromMd(s: string, srcPath: string): string {
+  // Strip a UTF-8 BOM before anchoring - macOS/Windows editors occasionally
+  // save .md with one, and the ^--- anchor would otherwise miss (same
+  // tolerance as the rule-frontmatter parser).
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
+  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) throw new Error(`${srcPath}: agent .md has no YAML frontmatter block.`);
+  const tierMatch = m[1].match(/^tier:\s*(\S+)\s*$/m);
+  if (!tierMatch) {
+    throw new Error(`${srcPath}: agent frontmatter has no tier: line (the authored contract).`);
+  }
+  return tierMatch[1];
+}
+
+// Rewrite an agent .md's frontmatter `tier: <t>` line into the harness-native
+// keys (Claude: `model:` + optional `effort:`; Kiro: optional `model:`; Codex
+// .md copies mirror Claude's shape - the TOMLs emit.ts writes are the binding
+// surface there). Called AFTER the token substitution + rules-rename pass.
+// A missing tier: on an agent file fails the build (agentTierFromMd). A null
+// projected model/effort means the harness-native key is OMITTED: the
+// harness's own session/config default applies (the inherit contract for
+// judgment/balanced agents). When every key is omitted the `tier:` line is
+// dropped without a replacement.
+function projectTierFrontmatter(
+  s: string,
+  srcPath: string,
+  harness: "claude" | "codex" | "kiro",
+): string {
+  // Only apply to files under agents/. Guard on the POSIX-normalized path
+  // (srcPath carries the platform separator on Windows) because a stage .md
+  // legitimately talks about "tier:" in prose.
+  const posixPath = srcPath.split(sep).join("/");
+  if (!posixPath.includes("/agents/") || !posixPath.endsWith("-agent.md")) return s;
+  const tier = agentTierFromMd(s, srcPath);
+  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (!m) throw new Error(`${srcPath}: agent .md has no closed frontmatter block.`);
+  const fm = m[1];
+  const proj = projectTier(tier, harness, TIER_CAP); // throws on unknown tier
+  const lines: string[] = [];
+  if (proj.model !== null) lines.push(`model: ${proj.model}`);
+  if ("effort" in proj && proj.effort !== null) lines.push(`effort: ${proj.effort}`);
+  // Rebuild the frontmatter line-wise: replace the tier line with the
+  // projected keys, or drop it entirely when every key is omitted. Line-wise
+  // filtering (not a regex splice) removes the tier line cleanly wherever it
+  // sits - first, last, or mid-frontmatter.
+  const newFm = fm
+    .split(/\r?\n/)
+    .flatMap((line) => (/^tier:/.test(line) ? lines : [line]))
+    .join("\n");
+  // Function replacement: a literal `$&`/`$'` in frontmatter must not be
+  // interpreted as a replacement pattern.
+  return s.replace(m[0], () => `---\n${newFm}\n---\n`);
+}
+
+// Project the `"model"` field of an authored Kiro agent .json from the tier
+// table. The JSONs stay hand-written (tools, resources, sandbox settings) but
+// the model dial is projection-owned: the authored files carry NO "model"
+// field at all (so nobody edits a value the build would overwrite), and the
+// tier comes from the same-name core/agents/<slug>.md (single source of
+// truth). A pinned tier ADDS the field; a null projected model leaves it
+// absent - the agent-v1 schema documents the fallback ("If not specified,
+// uses the default model"), which is exactly the judgment-tier inherit
+// contract. Files with no core .md counterpart (the aidlc.json orchestrator
+// config) pass through untouched: the orchestrator is not a tier-carrying
+// persona. Never writes any effort-like key - kiro-cli fail-closes on
+// unknown agent-JSON fields.
+function projectKiroAgentJson(srcPath: string, content: Buffer): Buffer {
+  const name = srcPath.split(sep).join("/").split("/").pop() ?? "";
+  if (!name.endsWith("-agent.json")) return content;
+  const coreMd = join(CORE_ROOT, "agents", name.replace(/\.json$/, ".md"));
+  if (!existsSync(coreMd)) return content;
+  const tier = agentTierFromMd(readFileSync(coreMd, "utf-8"), coreMd);
+  const proj = projectTier(tier, "kiro", TIER_CAP);
+  const parsed = JSON.parse(content.toString("utf-8")) as Record<string, unknown>;
+  if (proj.model === null) delete parsed.model;
+  else parsed.model = proj.model;
+  // Canonical re-serialization (2-space indent, trailing newline). Key order
+  // is preserved, but authored inline arrays re-expand one-per-line and
+  // authored unicode escapes re-emit as raw UTF-8 - the dist form is the
+  // stringify form, byte-stable under --check, not the authored bytes.
+  return Buffer.from(`${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+}
+
+// Merge the tier-derived chat.modelDefaults entries into an authored Kiro
+// settings/cli.json: one entry per distinct pinned Kiro model, carrying the
+// highest sharing tier's effort (the collapse rule - kiroModelDefaults()).
+// Authored entries (the orchestrator's opus-4.8 -> xhigh) are preserved and
+// win on collision, so a hand-tuned override in harness/kiro*/settings/
+// cli.json survives regeneration. CLI-only: the Kiro IDE ignores cli.json.
+function projectKiroCliJson(content: Buffer): Buffer {
+  const parsed = JSON.parse(content.toString("utf-8")) as Record<string, unknown>;
+  const defaults = (parsed["chat.modelDefaults"] ?? {}) as Record<string, unknown>;
+  for (const [model, effort] of Object.entries(kiroModelDefaults(TIER_CAP))) {
+    if (!(model in defaults)) defaults[model] = { output_config: { effort } };
+  }
+  parsed["chat.modelDefaults"] = defaults;
+  return Buffer.from(`${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+}
+
 function transform(
   srcPath: string,
   content: Buffer,
   harnessDir: string,
   rulesRename: string | null,
+  harness?: "claude" | "codex" | "kiro",
 ): Buffer {
   if (srcPath.endsWith(".md")) {
     let s = substituteToken(content.toString("utf-8"), harnessDir);
     s = applyRulesRename(s, harnessDir, rulesRename);
+    if (harness) s = projectTierFrontmatter(s, srcPath, harness);
     return Buffer.from(s, "utf-8");
   }
   return content;
@@ -247,7 +391,12 @@ function writeHarnessData(treeRoot: string, m: HarnessManifest): void {
 // checkHarness can byte-diff them (they live OUTSIDE <harnessDir>, like the
 // projectRoot harness files). Same source + destination for every harness — the
 // method is harness-neutral; the per-harness native include is what differs.
-function emitMemory(outRoot: string, harnessDir: string, rulesRename: string | null): string[] {
+function emitMemory(
+  outRoot: string,
+  harnessDir: string,
+  rulesRename: string | null,
+  harness: "claude" | "codex" | "kiro",
+): string[] {
   const srcDir = join(CORE_ROOT, MEMORY_SRC);
   const written: string[] = [];
   if (!existsSync(srcDir)) return written;
@@ -255,7 +404,7 @@ function emitMemory(outRoot: string, harnessDir: string, rulesRename: string | n
     const rel = relative(srcDir, file);
     const outPath = join(outRoot, MEMORY_DST, rel);
     mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, rulesRename));
+    writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, rulesRename, harness));
     written.push(outPath);
   }
   return written;
@@ -268,14 +417,19 @@ function emitMemory(outRoot: string, harnessDir: string, rulesRename: string | n
 // (a no-op on the neutral method files) but writes into treeRoot (the harness
 // engine dir), so the normal in-harness walk + byte-diff covers it — no
 // outsideHarness bookkeeping needed. Same source as emitMemory, different dst.
-function emitMemorySeed(treeRoot: string, harnessDir: string, rulesRename: string | null): void {
+function emitMemorySeed(
+  treeRoot: string,
+  harnessDir: string,
+  rulesRename: string | null,
+  harness: "claude" | "codex" | "kiro",
+): void {
   const srcDir = join(CORE_ROOT, MEMORY_SRC);
   if (!existsSync(srcDir)) return;
   for (const file of walk(srcDir)) {
     const rel = relative(srcDir, file);
     const outPath = join(treeRoot, MEMORY_SEED_DST, rel);
     mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, rulesRename));
+    writeFileSync(outPath, transform(file, readFileSync(file), harnessDir, rulesRename, harness));
   }
 }
 
@@ -324,6 +478,10 @@ function seedCompiledData(treeRoot: string, seedFrom: string): void {
 function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): string[] {
   const harnessDir = m.harnessDir;
   const treeRoot = join(outRoot, harnessDir);
+  // Every harness projects onto ONE of the three flavors the tier module
+  // knows (Kiro CLI and Kiro IDE share the "kiro" flavor - identical model
+  // dial). Declared per manifest, never inferred from the harness name.
+  const harnessKind = m.tierFlavor;
   // Out-of-harness paths the build produced (memory tree + any emit output),
   // returned for checkHarness's byte-diff of files OUTSIDE <harnessDir>.
   const outsideHarness: string[] = [];
@@ -344,7 +502,7 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
       const rel = relative(srcDir, file);
       const outPath = join(treeRoot, finalDst, rel);
       mkdirSync(dirname(outPath), { recursive: true });
-      let out = transform(file, readFileSync(file), harnessDir, m.rulesRename);
+      let out = transform(file, readFileSync(file), harnessDir, m.rulesRename, harnessKind);
       // Manifest keys are POSIX; normalize the platform separator so the
       // lookup works on Windows too.
       const harnessRel = join(finalDst, rel).split(sep).join("/");
@@ -369,14 +527,25 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
 
   // 2. Copy authored harness surfaces (token substitution on .md). projectRoot
   //    files land beside the harness dir (e.g. dist/kiro/AGENTS.md), the rest
-  //    inside <harnessDir>/.
+  //    inside <harnessDir>/. On the kiro harnesses two authored JSON surfaces
+  //    are additionally tier-projected: the agent .json "model" fields and the
+  //    settings/cli.json chat.modelDefaults entries (effort rides on the model
+  //    on Kiro - see aidlc-tiers.ts).
   const harnessSrcRoot = join(HARNESS_ROOT, m.name);
   for (const { src, dst, projectRoot } of m.harnessFiles) {
     const srcPath = join(harnessSrcRoot, src);
     if (!existsSync(srcPath)) continue;
     const outPath = projectRoot ? join(outRoot, dst) : join(treeRoot, dst);
     mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, transform(srcPath, readFileSync(srcPath), harnessDir, m.rulesRename));
+    let out = transform(srcPath, readFileSync(srcPath), harnessDir, m.rulesRename, harnessKind);
+    if (harnessKind === "kiro") {
+      if (src.startsWith("agents/") && src.endsWith(".json")) {
+        out = projectKiroAgentJson(srcPath, out);
+      } else if (src === "settings/cli.json") {
+        out = projectKiroCliJson(out);
+      }
+    }
+    writeFileSync(outPath, out);
   }
 
   // 2b. Render the onboarding doc from the shared skeleton (scripts/onboarding.ts),
@@ -389,7 +558,7 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
     const rendered = renderOnboarding(readFileSync(ONBOARDING_SKELETON, "utf-8"), fills);
     const outPath = projectRoot ? join(outRoot, dst) : join(treeRoot, dst);
     mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, transform(dst, Buffer.from(rendered, "utf-8"), harnessDir, m.rulesRename));
+    writeFileSync(outPath, transform(dst, Buffer.from(rendered, "utf-8"), harnessDir, m.rulesRename, harnessKind));
   }
 
   // 2c. Emit the relocated method ("memory") tree at the workspace root
@@ -397,7 +566,7 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
   //     the compile step's loadRules resolves rules_in_context from this tree
   //     (AIDLC_RULES_DIR points there below), so it has to exist first.
   const memoryDir = join(outRoot, MEMORY_DST);
-  outsideHarness.push(...emitMemory(outRoot, harnessDir, m.rulesRename));
+  outsideHarness.push(...emitMemory(outRoot, harnessDir, m.rulesRename, harnessKind));
 
   // 2d. Emit the active-space cursor (aidlc/active-space -> "default") — part of
   //     the shipped shell so a fresh copy resolves the default space with no
@@ -409,7 +578,7 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
   //     install (no sibling aidlc/ shell) can self-heal — the first /aidlc copies
   //     it out via ensureWorkspaceDirs. Inside <harnessDir>, so the in-harness
   //     walk byte-diffs it under --check (no outsideHarness entry).
-  emitMemorySeed(treeRoot, harnessDir, m.rulesRename);
+  emitMemorySeed(treeRoot, harnessDir, m.rulesRename, harnessKind);
 
   // 3. Compile the stage graph into the assembled tree (writes harness-correct
   //    stage-graph.json + scope-grid.json). compileStageGraph() bootstraps each
@@ -463,6 +632,7 @@ function buildTree(m: HarnessManifest, outRoot: string, seedFrom: string): strin
         distRoot: outRoot,
         harnessDir,
         substituteToken: (s: string) => substituteToken(s, harnessDir),
+        tierCap: TIER_CAP,
         check: false,
       }).written,
     );

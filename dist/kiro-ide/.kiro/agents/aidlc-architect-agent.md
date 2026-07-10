@@ -8,7 +8,6 @@ description: >
   Solutions architect responsible for application design, domain modelling, NFR patterns, and component decomposition.
   Leads Feasibility, Application Design, Units Generation, Functional Design, NFR Requirements, and NFR Design stages.
 disallowedTools: Task
-model: opus
 tools: ["read", "write", "shell"]
 ---
 
