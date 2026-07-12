@@ -4,6 +4,9 @@
 > **GA Preview — under active development.** AI-DLC Workflows 2.0 is a GA Preview release. Interfaces, stage definitions, the agent roster, and the install model are still evolving, and breaking changes can land between releases. Expect rough edges, pin a known-good version for anything you depend on, and review all generated output before you act on it. See the [roadmap](https://awslabs.github.io/aidlc-workflows/roadmap.html) for what's shipped, in flight, and planned.
 > **For production use, stay on the stable [`main`](https://github.com/awslabs/aidlc-workflows/tree/main) branch.**
 
+> [!NOTE]
+> **This `v2-odyssey` branch ships the Odyssey-influenced Workflow Composer** — an adaptive composer that estimates implementation entropy (intent ambiguity, codebase structural uncertainty, verification entropy, risk, unresolved assumptions) and composes the minimum viable workflow, grounding structural estimates in CodeKB MCP call-graph and component analysis when available. It replaces the keyword/pattern-matched composer on `main`.
+
 A native implementation of the **AI-DLC methodology** (AI-Driven Development Life Cycle) that runs on **many harnesses from one source of truth** — today Claude Code, Kiro IDE, Kiro CLI, and Codex CLI, and any capable harness you port it to. Run a full software-development lifecycle — 11 domain-expert agents working through a 32-stage workflow, and you approve every gate — in whichever harness you use.
 
 The methodology lives once, in a harness-neutral `core/`; each harness adds a thin surface that decides how it shows up on that harness. So you edit the methodology in one place, and every harness distribution is generated from it — no harness gets special treatment. (See [Repository layout](#repository-layout) for how the pieces fit together.)
