@@ -47,6 +47,9 @@ test-pro/
   sensors/aidlc-requirement-coverage.md
   tools/aidlc-sensor-coverage-threshold.ts            # the sensor scripts
   tools/aidlc-sensor-requirement-coverage.ts
+  scopes/test-pro-validation.md                       # NEW plugin scope
+  agents/test-pro-metrics-agent.md                    # NEW support persona
+  knowledge/test-pro-metrics-agent/methodology.md     # plugin methodology knowledge
 ```
 
 `.aidlc-plugin/plugin.json` is a **declarative** manifest. Its top level mirrors
@@ -56,7 +59,7 @@ block:
 
 ```jsonc
 {
-  "name": "test-pro",                 // == dir name; "core" is reserved
+  "name": "test-pro",                 // == dir name; "core", "aidlc", and "aidlc-*" are reserved
   "version": "0.1.0",                 // semver; checked by dependents
   "description": "Full-featured testing plugin — unit/branch coverage, functional, integration, regression, edge, and API positive+negative.",
   "author": { "name": "AWS AIDLC" },
@@ -65,6 +68,9 @@ block:
     "contributes": {                  // which subtrees this plugin ships
       "stages": "stages/",            // NEW stage files
       "overlays": "contributions/",   // CONTRIBUTION files (§3 — modify existing)
+      "agents": "agents/",            // NEW personas
+      "scopes": "scopes/",            // NEW scope identities
+      "knowledge": "knowledge/",      // methodology knowledge for agents
       "sensors": "sensors/",          // sensor manifests
       "tools": "tools/"               // sensor scripts (so a sensor can run)
     }
@@ -80,9 +86,9 @@ block:
 directory is no longer read — see §4). `overlays` is special: it is **not**
 copied; it holds the per-stage contributions consumed by the merge (§3).
 
-Ship only the keys your plugin uses — `test-pro` ships no `agents`/`scopes`/
-`memory`/`knowledge` because it reuses `aidlc-quality-agent` and adds none of
-those. A plugin that does ship them gets one section each below (§4).
+Ship only the keys your plugin uses. `test-pro` ships a support agent, a plugin
+scope, and per-agent methodology knowledge; it still reuses
+`aidlc-quality-agent` as the lead.
 
 > **No number ranges.** Stage numbers are display-only, so a plugin does **not**
 > claim a number range in its manifest. See §2.
@@ -95,6 +101,8 @@ A plugin stage is an ordinary stage file (see
 - Its `plugin:` field names your plugin.
 - Any artifact it `produces:` must be prefixed `<plugin>-` (e.g.
   `test-pro-integration-test-results`).
+
+`bundle:` was the pre-rename ownership key and is rejected with an error naming the fix - write `plugin:`. The word is reserved for a possible future collection-of-plugins concept.
 
 Stage **identity is the slug**, everywhere that matters (edges, jumps,
 resolution). The `number:` is a **display hint** only — it orders the stage in
@@ -177,14 +185,14 @@ marks what the compose hook merges today vs. designed-but-deferred (mirrors doc 
 | `in:<Compartment>` | at the end of the named `## <Compartment>` block (e.g. `in:Sensors`) | ✅ |
 | `after-questions`  | after the questions-generating step                                | ⏳ not implemented — `locateAnchor` has no case; drops "unknown anchor". Use `after-step:<n>`. |
 
-Fragments are ordered deterministically by `(order, bundle)`. A same
-`(bundle, anchor, order)` collision — within one file or across two contribution
+Fragments are ordered deterministically by `(order, plugin)`. A same
+`(plugin, anchor, order)` collision — within one file or across two contribution
 files this run — is **dropped-with-log** (not last-writer-wins). When two
 *different* plugins contribute to the same stage, their structural additions
 set-union and their fragments interleave by this same ordering — genuinely merged.
 
 Each spliced fragment is wrapped in a sentinel comment carrying a content hash
-(`<!-- plugin:<bundle>:<anchor>:<order>:<hash> --> … <!-- /plugin:… -->`), which
+(`<!-- plugin:<plugin>:<anchor>:<order>:<hash> --> … <!-- /plugin:… -->`), which
 is how re-composing stays idempotent and an upgraded fragment replaces its prior
 block. Two authoring rules follow from that:
 
@@ -199,47 +207,42 @@ block. Two authoring rules follow from that:
 
 ## 4. Packaging the other primitives
 
-> **⏳ Status: designed, not yet wired.** Today the packager projects only a
-> plugin's `stages/`, `sensors/`, `tools/`, and `contributions/`. The `agents/`,
-> `scopes/`, `memory/`, and `knowledge/` subtrees below are the *intended* shape
-> but are **not yet emitted** into an install — authoring them has no effect until
-> the projection lands (doc 18 §8 Status). `test-pro` therefore ships only the
-> wired primitives.
+`test-pro` ships stages, contributions, sensors, a support agent, a scope, and
+methodology knowledge. A richer plugin may also add method/rules later; memory
+projection remains deferred (doc 18 §8 Status).
 
-`test-pro` ships stages, contributions, and sensors. A richer plugin adds agents,
-scopes, method/rules, or knowledge — one rule each (all deferred per the note above):
-
-- **Agents.** Drop `agents/<slug>-agent.md` with `plugin:` set. It is discovered
-  automatically and your plugin's stages may name it as `lead_agent`/
-  `support_agents`. An agent slug that collides with core or another plugin is a
-  compose error (no silent shadowing). See [Adding an Agent](03-adding-an-agent.md).
+- **Agents.** Drop `agents/<plugin>-<role>-agent.md` with `plugin:` set. The
+  plugin prefix replaces core's `aidlc-` filename prefix, and the filename stem
+  must equal frontmatter `name` (for example,
+  `agents/test-pro-metrics-agent.md` has `name: test-pro-metrics-agent`). It is
+  discovered automatically after compose, and your plugin's stages may name it
+  as `lead_agent`/`support_agents`. A same-path collision with different content
+  is not overwritten; compose records a drop log. See
+  [Adding an Agent](03-adding-an-agent.md).
 - **Sensors.** Ship the manifest `sensors/aidlc-<id>.md` **and** its script under
   `tools/` (both — a manifest alone is discoverable but its script must live in
   `tools/` to run). Bind it to your own stages via `sensors:`, or to a core stage
   via a contribution's `adds.sensors`. See [Sensors](06-sensors.md).
-- **Method/rules.** Ship a `memory/` subtree — `memory/phases/<phase>.md` (or
+- **Method/rules.** *(⏳ deferred.)* Ship a `memory/` subtree — `memory/phases/<phase>.md` (or
   `memory/{org,team,project}.md`) — via `contributes.memory`. It **merges into
-  the default-space method seed** (`aidlc/spaces/default/memory/`), and a phase
-  file's guardrails load strict-additively for every stage in that phase. Do
+  the default-space method seed** (`aidlc/spaces/default/memory/`) in the design,
+  but the packager/compose hook does not project or merge `memory/` yet. Do
   **not** ship a `rules/` dir — that path is no longer read (the rule layer moved
   into per-space memory). See [Rules and the Loop](05-rules-and-the-loop.md).
 - **Knowledge.** Ship per-agent **methodology** knowledge under
   `knowledge/<agent-slug>/`, projected into the framework-shipped
-  `<harness>/knowledge/` tree and loaded when that agent leads a stage. Note:
-  **domain/team knowledge** (`aidlc/spaces/<space>/knowledge/`) is empty-at-
-  bootstrap user runtime state — a plugin does not ship it. See
+  `<harness>/knowledge/` tree and loaded when that agent leads or supports a
+  stage. Note: **domain/team knowledge** (`aidlc/spaces/<space>/knowledge/`) is
+  empty-at-bootstrap user runtime state — a plugin does not ship it. See
   [Team Knowledge](07-team-knowledge.md).
-- **Scopes.** A scope has two parts. Its **identity** is one file you ship under
-  `scopes/aidlc-<name>.md`. Its **membership** — which stages run under it — is
-  additive, declared two ways:
-  - *scope-side (coarse):* the scope file lists the phases/stages it includes
-    (`includes_phases`, `includes_stages`), so a plugin scope can pull in existing
-    core stages without touching them;
-  - *stage-side (fine):* a contribution's `adds.scopes` (§3) unions the scope name
-    into one specific core stage's membership.
-
-  Membership is additive-only — a stage can gain a scope from a plugin but never
-  lose one. See [Scopes](04-scopes.md).
+- **Scopes.** A scope's **identity** is one file you ship under
+  `scopes/<plugin>-<name>.md`. The plugin prefix replaces core's `aidlc-`
+  filename prefix, and the filename stem must equal frontmatter `name` (for
+  example, `scopes/test-pro-validation.md` has `name: test-pro-validation`).
+  Membership for plugin-authored stages is their `scopes:` frontmatter list. A
+  contribution's `adds.scopes` (§3) is still deferred and drop-logged rather than
+  merged, so do not rely on it to add your scope to an existing core stage yet.
+  See [Scopes](04-scopes.md).
 
 ## 5. Distribution + install
 

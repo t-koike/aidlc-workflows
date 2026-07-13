@@ -12,10 +12,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   parseStageFrontmatter,
+  scalarField,
 } from "../../../dist/claude/.claude/tools/aidlc-lib.ts";
 import {
   type ValidationContext,
@@ -43,12 +44,16 @@ function walk(dir: string): string[] {
   return out;
 }
 
-// The real agent roster (dist), plus the reserved orchestrator pseudo-agent.
+// The real core agent roster (dist), plus this plugin's own agents/ bucket and
+// the reserved orchestrator pseudo-agent. A plugin-shipped stage may name a
+// plugin-shipped persona as lead_agent/support_agents at author-validation time.
 function agentRoster(): string[] {
-  const slugs = readdirSync(AGENTS_DIR)
+  const coreSlugs = readdirSync(AGENTS_DIR)
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.replace(/\.md$/, ""));
-  return [...slugs, "orchestrator"];
+  const pluginSlugs = walk(join(PLUGIN_ROOT, "agents"))
+    .map((f) => basename(f, ".md"));
+  return [...new Set([...coreSlugs, ...pluginSlugs, "orchestrator"])].sort();
 }
 
 // Core stage slugs (contribution targets must resolve to one of these).
@@ -58,6 +63,12 @@ function coreStageSlugs(): Set<string> {
 
 const pluginStageFiles = walk(join(PLUGIN_ROOT, "stages"));
 const contributionFiles = walk(join(PLUGIN_ROOT, "contributions"));
+const pluginScopeFiles = walk(join(PLUGIN_ROOT, "scopes"));
+const pluginAgentFiles = walk(join(PLUGIN_ROOT, "agents"));
+
+function stageBodyAfterFrontmatter(raw: string): string {
+  return raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/)?.[1] ?? "";
+}
 
 describe(`${PLUGIN_NAME} plugin — own content validation`, () => {
   test("has stages and contributions to validate", () => {
@@ -82,9 +93,19 @@ describe(`${PLUGIN_NAME} plugin — own content validation`, () => {
         expect(fm.slug).toBe(name.replace(/\.md$/, ""));
       });
 
-      test(`${name} declares bundle: ${PLUGIN_NAME}`, () => {
+      test(`${name} declares plugin: ${PLUGIN_NAME}`, () => {
         const fm = parseStageFrontmatter(readFileSync(file, "utf-8"));
-        expect(fm.bundle).toBe(PLUGIN_NAME);
+        expect(fm.plugin).toBe(PLUGIN_NAME);
+      });
+
+      test(`${name} has a non-empty body`, () => {
+        const body = stageBodyAfterFrontmatter(readFileSync(file, "utf-8"));
+        if (body.trim().length === 0) {
+          throw new Error(
+            `${name}: stage body is empty - the stage is behaviorally dead; did a transform drop everything after the closing ---?`
+          );
+        }
+        expect(body.trim().length).toBeGreaterThan(0);
       });
 
       test(`${name} produces only ${PLUGIN_NAME}- namespaced artifacts`, () => {
@@ -110,8 +131,8 @@ describe(`${PLUGIN_NAME} plugin — own content validation`, () => {
         expect(cores.has(target!)).toBe(true);
       });
 
-      test(`${name} declares bundle: ${PLUGIN_NAME}`, () => {
-        expect(fm.match(/^bundle:\s*(.+)$/m)?.[1].trim()).toBe(PLUGIN_NAME);
+      test(`${name} declares plugin: ${PLUGIN_NAME}`, () => {
+        expect(fm.match(/^plugin:\s*(.+)$/m)?.[1].trim()).toBe(PLUGIN_NAME);
       });
 
       test(`${name} adds.produces are ${PLUGIN_NAME}- namespaced`, () => {
@@ -123,6 +144,27 @@ describe(`${PLUGIN_NAME} plugin — own content validation`, () => {
         for (const artifact of items) {
           expect(artifact.startsWith(`${PLUGIN_NAME}-`)).toBe(true);
         }
+      });
+    }
+  });
+
+  // --- Plugin-shipped scopes and agents keep filename identity stable ---
+  describe("scope and agent naming", () => {
+    for (const file of pluginScopeFiles) {
+      const name = file.split("/").pop()!;
+      test(`${name} scope name matches filename stem`, () => {
+        const raw = readFileSync(file, "utf-8");
+        const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+        expect(scalarField(fm, "name")).toBe(basename(file, ".md"));
+      });
+    }
+
+    for (const file of pluginAgentFiles) {
+      const name = file.split("/").pop()!;
+      test(`${name} agent name matches filename stem`, () => {
+        const raw = readFileSync(file, "utf-8");
+        const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+        expect(scalarField(fm, "name")).toBe(basename(file, ".md"));
       });
     }
   });

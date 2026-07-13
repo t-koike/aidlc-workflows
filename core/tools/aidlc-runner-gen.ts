@@ -9,14 +9,16 @@
 //     stages by hand. The bootstrap INITIALIZATION stages are excluded (they
 //     have no standalone --single meaning); the whole init phase is packaged as
 //     ONE `/aidlc-init` runner over `/aidlc --init` instead.
+//     Plugin-owned stages use their bare plugin-prefixed slug as the runner
+//     name; core stages keep the historical `aidlc-<stage>` name.
 //
-// (2) SCOPE-RUNNERS: one thin `skills/aidlc-<scope>/SKILL.md` per
-//     shipped `.claude/scopes/aidlc-<name>.md` file. A scope-runner is packaging,
+// (2) SCOPE-RUNNERS: one thin runner per shipped scope file whose frontmatter
+//     declares `runner: true`. A scope-runner is packaging,
 //     not definition (decision D-A): each is a ~6-line shell that drives the
 //     engine (`aidlc-orchestrate next --scope <scope>`) to `done` with a fixed
 //     scope and no scope detection. The full set of scopes is always reachable
 //     via `/aidlc --scope <name>`; runners are typeable sugar over the
-//     high-traffic ones (the FIRST_BATCH).
+//     high-traffic ones marked in scope metadata.
 //
 // COMPOSE, don't reimplement. The stage-slug list comes from loadGraph() — the
 // one compiled source of truth (data/stage-graph.json); the scope list comes
@@ -42,7 +44,7 @@
 //   list             — print the stage slugs one per line (debugging aid).
 //   scopes [--all] [--check] [--out <skills-dir>]
 //                    — generate/validate SCOPE-runner skills over
-//                      `.claude/scopes/*.md` (FIRST_BATCH, or `--all`).
+//                      `.claude/scopes/*.md` (`runner: true`, or `--all`).
 //
 // Env seams (mirror aidlc-lib.ts): AIDLC_SCOPES_DIR points the scope-file reader
 // at an isolated tree; --out points the scope writer at an isolated skills dir.
@@ -57,7 +59,16 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage, harnessDir } from "./aidlc-lib.ts";
+import {
+  errorMessage,
+  frontmatterBlock,
+  harnessDir,
+  isPluginEnabled,
+  loadScopeMetadataAll,
+  loadStageGraphAll,
+  pluginsEnabled,
+  scopeGridPath,
+} from "./aidlc-lib.ts";
 import { type GraphStage, loadGraph } from "./aidlc-graph.ts";
 
 // Resolve the skills/ dir off THIS module's location (tools/ → ../skills/) so the
@@ -70,10 +81,11 @@ const SKILLS_DIR = join(TOOLS_DIR, "..", "skills");
 // STAGE-RUNNER HALF
 // =========================================================================
 
-// The dir name for a stage's runner skill: `aidlc-<slug>`. The skill `name`
+// The dir name for a stage's runner skill. Core stages keep `aidlc-<slug>`;
+// plugin-owned stages use the bare plugin-prefixed slug. The skill `name`
 // frontmatter equals the dir name (Agent-Skills-spec invariant t123 asserts).
-function runnerDirName(slug: string): string {
-  return `aidlc-${slug}`;
+function runnerDirName(node: Pick<GraphStage, "slug" | "plugin">): string {
+  return node.plugin ? node.slug : `aidlc-${node.slug}`;
 }
 
 // Initialization-phase stages are bootstrap: they have no standalone meaning
@@ -116,11 +128,18 @@ const INIT_RUNNER_DIR = "aidlc-init";
 // invariant). The `--single` invariant is named in prose so a reader of the
 // runner understands it never advances the main workflow.
 export function renderStageRunner(node: GraphStage): string {
-  const dir = runnerDirName(node.slug);
+  const dir = runnerDirName(node);
+  const descriptionLead = node.plugin
+    ? `Run the ${node.plugin} plugin \`${node.slug}\` stage (${node.phase} phase) in isolation, without`
+    : `Run the AI-DLC \`${node.slug}\` stage (${node.phase} phase) in isolation, without`;
+  const bodyLead = node.plugin
+    ? `Run the \`${node.slug}\` stage from the ${node.plugin} plugin on its own. This is opt-in packaging over`
+    : `Run the \`${node.slug}\` stage on its own. This is opt-in packaging over`;
   return `---
 name: ${dir}
+generated-by: aidlc-runner-gen
 description: >
-  Run the AI-DLC \`${node.slug}\` stage (${node.phase} phase) in isolation, without
+  ${descriptionLead}
   advancing the main workflow. Packages \`/aidlc --stage ${node.slug} --single\`:
   the engine emits one run-stage directive for ${node.slug} and its gate, the
   conductor runs it, then the single-stage run commits a synthetic-id pair and
@@ -131,7 +150,7 @@ user-invocable: true
 
 # AI-DLC Stage Runner — ${node.slug}
 
-Run the \`${node.slug}\` stage on its own. This is opt-in packaging over
+${bodyLead}
 \`/aidlc --stage ${node.slug} --single\`; the same stage is always reachable via
 that flag without this skill.
 
@@ -174,6 +193,7 @@ that flag without this skill.
 export function renderInitRunner(): string {
   return `---
 name: ${INIT_RUNNER_DIR}
+generated-by: aidlc-runner-gen
 description: >
   Start an AI-DLC workflow — run the whole Initialization phase (mint the
   intent, detect the workspace, build state) in one step, without typing a
@@ -229,13 +249,14 @@ const COMPOSE_RUNNER_DIR = "aidlc-compose";
 // hardcoded single-runner, NOT a reuse - renderInitRunner is init-specific).
 // Drift-guard note: this runner drives `next compose`, so NEITHER existing
 // guard counts it - the stage guard keys on the `--stage`+`--single` body
-// marker and the scope guard byte-compares the FIRST_BATCH set. Like
+// marker and the scope guard byte-compares the frontmatter-selected scope set. Like
 // `/aidlc-init`, its parity is held by the packager's dist-level `--check`
 // (handleWrite is idempotent, so a stale or hand-edited copy fails the
 // byte-compare there).
 export function renderComposeRunner(): string {
   return `---
 name: ${COMPOSE_RUNNER_DIR}
+generated-by: aidlc-runner-gen
 description: >
   Compose a tailored AI-DLC workflow plan - the adaptive composer reads your
   task (or a scan report), proposes the EXECUTE/SKIP stage grid that fits,
@@ -278,8 +299,9 @@ conductor runs the same forwarding loop as \`/aidlc\`.
 // for all 32 stages. Returns the slugs written.
 function handleWrite(): string[] {
   const slugs = stageSlugs();
+  const compiledSet = new Set(slugs);
   for (const node of runnableStages()) {
-    const dir = join(SKILLS_DIR, runnerDirName(node.slug));
+    const dir = join(SKILLS_DIR, runnerDirName(node));
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SKILL.md"), renderStageRunner(node), "utf-8");
   }
@@ -291,45 +313,119 @@ function handleWrite(): string[] {
   const composeDir = join(SKILLS_DIR, COMPOSE_RUNNER_DIR);
   if (!existsSync(composeDir)) mkdirSync(composeDir, { recursive: true });
   writeFileSync(join(composeDir, "SKILL.md"), renderComposeRunner(), "utf-8");
-  // Prune stale per-init-stage runner dirs from an earlier all-32 generation.
-  for (const node of loadGraph()) {
-    if (isRunnableStage(node)) continue;
-    const staleDir = join(SKILLS_DIR, runnerDirName(node.slug));
-    const staleSkill = join(staleDir, "SKILL.md");
-    if (isRunnerSkill(staleSkill)) rmSync(staleDir, { recursive: true, force: true });
+  // Prune stale stage-runner dirs: old per-init runners and runners for stages
+  // now absent from the filtered graph because their plugin is disabled.
+  const legacyBareSlugs = pluginOwnedStageSlugsForLegacy();
+  for (const entry of readdirSync(SKILLS_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(SKILLS_DIR, entry.name);
+    const slug = generatedRunnerSlugForPrune(
+      join(dir, "SKILL.md"),
+      entry.name,
+      stageRunnerSlugFromBody,
+      legacyBareSlugs,
+    );
+    if (slug && !compiledSet.has(slug)) rmSync(dir, { recursive: true, force: true });
   }
   return slugs;
+}
+
+const RUNNER_GEN_MARKER_KEY = "generated-by";
+const RUNNER_GEN_MARKER_VALUE = "aidlc-runner-gen";
+
+type RunnerSlugParser = (body: string) => string | null;
+
+function leadingFrontmatter(body: string): string | null {
+  return frontmatterBlock(body);
+}
+
+function hasRunnerGenMarker(body: string): boolean {
+  const frontmatter = leadingFrontmatter(body);
+  if (!frontmatter) return false;
+  return new RegExp(`^${RUNNER_GEN_MARKER_KEY}:\\s*${RUNNER_GEN_MARKER_VALUE}\\s*$`, "m").test(frontmatter);
+}
+
+function isLegacyGeneratedRunnerDirName(
+  dirName: string,
+  slug: string,
+  legacyBareSlugs: ReadonlySet<string>,
+): boolean {
+  // One-release transition for markerless runners generated before the
+  // provenance marker existed: core-owned generated runners used aidlc-<slug>,
+  // while plugin-owned generated runners used the bare plugin-prefixed slug.
+  return dirName === `aidlc-${slug}` || (legacyBareSlugs.has(slug) && dirName === slug);
+}
+
+function generatedRunnerSlugForPrune(
+  skillMdPath: string,
+  dirName: string,
+  parseSlug: RunnerSlugParser,
+  legacyBareSlugs: ReadonlySet<string>,
+): string | null {
+  if (!existsSync(skillMdPath)) return null;
+  const body = readFileSync(skillMdPath, "utf-8");
+  const slug = parseSlug(body);
+  if (!slug) return null;
+  if (hasRunnerGenMarker(body) || isLegacyGeneratedRunnerDirName(dirName, slug, legacyBareSlugs)) {
+    return slug;
+  }
+  console.error(`unmanaged skill, not pruned: ${dirName}`);
+  return null;
+}
+
+function pluginOwnedStageSlugsForLegacy(): ReadonlySet<string> {
+  return new Set(loadStageGraphAll().filter((s) => s.plugin).map((s) => s.slug));
+}
+
+function pluginOwnedScopeSlugsForLegacy(): ReadonlySet<string> {
+  const all = loadScopeMetadataAll() as Record<string, { plugin?: string }>;
+  return new Set(Object.entries(all).filter(([, front]) => front.plugin).map(([scope]) => scope));
 }
 
 // The on-disk runner SIGNATURE: a stage-runner's SKILL.md drives
 // `aidlc-orchestrate next --stage <slug> --single`. Identifying runners by this
 // body marker — NOT by compiled-set membership — is what lets the drift guard see
-// ORPHANS: a `skills/aidlc-<slug>/` dir that drives `--single` but whose slug is
+// ORPHANS: a runner skill dir that drives `--single` but whose slug is
 // no longer a compiled stage. Non-runner skills (aidlc, aidlc-replay,
 // aidlc-session-cost, aidlc-outcomes-pack, and the scope-runners, which drive
 // `--scope` not `--stage`) carry no `--stage … --single` marker, so they are
 // never mistaken for stage-runners and never flagged.
 const SINGLE_RUNNER_MARKER = "--stage";
+function stageRunnerSlugFromBody(body: string): string | null {
+  if (!body.includes(SINGLE_RUNNER_MARKER) || !body.includes("--single")) return null;
+  const m = body.match(/--stage\s+([a-z][a-z0-9-]*)\s+--single/);
+  return m?.[1] ?? null;
+}
+
 function isRunnerSkill(skillMdPath: string): boolean {
   if (!existsSync(skillMdPath)) return false;
   const body = readFileSync(skillMdPath, "utf-8");
-  return body.includes(SINGLE_RUNNER_MARKER) && body.includes("--single");
+  return stageRunnerSlugFromBody(body) !== null;
 }
 
-// The on-disk stage-runner set: every `skills/aidlc-<slug>/` dir whose SKILL.md
-// is a stage-runner (carries the `--single` signature). Returns the slugs —
-// compiled or not — so the caller can compute BOTH missing (compiled, no runner)
-// AND orphan (runner, not compiled) divergences.
+function runnerSlugFromSkill(skillMdPath: string): string | null {
+  if (!isRunnerSkill(skillMdPath)) return null;
+  const body = readFileSync(skillMdPath, "utf-8");
+  return stageRunnerSlugFromBody(body);
+}
+
+// The on-disk stage-runner set: every skill dir whose SKILL.md is a stage-runner
+// (carries the `--single` signature). Returns the slugs — compiled or not — so
+// the caller can compute BOTH missing (compiled, no runner) AND orphan (runner,
+// not compiled) divergences. Slugs are parsed from the command body because
+// plugin-owned runner dirs intentionally do not have an `aidlc-` prefix.
 function onDiskRunnerSlugs(): string[] {
+  return onDiskRunnerEntries().map((e) => e.slug);
+}
+
+function onDiskRunnerEntries(): Array<{ slug: string; dir: string }> {
   if (!existsSync(SKILLS_DIR)) return [];
-  const found: string[] = [];
+  const found: Array<{ slug: string; dir: string }> = [];
   for (const entry of readdirSync(SKILLS_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    if (!entry.name.startsWith("aidlc-")) continue;
-    const slug = entry.name.slice("aidlc-".length);
-    if (isRunnerSkill(join(SKILLS_DIR, entry.name, "SKILL.md"))) {
-      found.push(slug);
-    }
+    const dir = join(SKILLS_DIR, entry.name);
+    const slug = runnerSlugFromSkill(join(dir, "SKILL.md"));
+    if (slug) found.push({ slug, dir });
   }
   return found;
 }
@@ -340,11 +436,14 @@ function onDiskRunnerSlugs(): string[] {
 // divergence so a stage added to the graph without regenerating runners fails
 // loudly.
 function handleCheck(): void {
-  const compiled = stageSlugs();
+  const compiledNodes = runnableStages();
+  const compiled = compiledNodes.map((s) => s.slug);
   const compiledSet = new Set(compiled);
   const onDisk = new Set(onDiskRunnerSlugs());
 
-  const missing = compiled.filter((s) => !onDisk.has(s)).sort();
+  const missing = compiledNodes
+    .filter((s) => !onDisk.has(s.slug))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
   const orphans = [...onDisk].filter((s) => !compiledSet.has(s)).sort();
 
   if (missing.length === 0 && orphans.length === 0) {
@@ -354,10 +453,10 @@ function handleCheck(): void {
     return;
   }
   if (missing.length > 0) {
-    console.log(`MISSING runners (stage in graph, no skills/aidlc-<slug>/): ${missing.join(", ")}`);
+    console.log(`MISSING runners (stage in graph, no matching skill dir): ${missing.map((s) => `${s.slug} (${runnerDirName(s)})`).join(", ")}`);
   }
   if (orphans.length > 0) {
-    console.log(`ORPHAN runners (skills/aidlc-<slug>/ with no matching stage): ${orphans.join(", ")}`);
+    console.log(`ORPHAN runners (skill drives --single stage with no matching stage): ${orphans.join(", ")}`);
   }
   console.log(`Run \`bun ${harnessDir()}/tools/aidlc-runner-gen.ts write\` to regenerate.`);
   process.exit(1);
@@ -367,25 +466,22 @@ function handleCheck(): void {
 // SCOPE-RUNNER HALF
 // =========================================================================
 
-// The first batch of scopes that ship a typeable runner skill. Author-decided
-// (high-traffic + the named bugfix): `bugfix` (the spec's headline example),
-// `feature` (the highest-traffic standard greenfield scope), `mvp` (the common
-// greenfield starting point), and `security-patch` (high-value incremental).
-// Every other scope still runs via `/aidlc --scope <name>` — runners are
-// packaging, not definition. Pass `--all` to emit a runner per shipped scope.
-export const FIRST_BATCH: readonly string[] = [
-  "bugfix",
-  "feature",
-  "mvp",
-  "security-patch",
-];
-
 function scopesDir(): string {
   return process.env.AIDLC_SCOPES_DIR ?? join(TOOLS_DIR, "..", "scopes");
 }
 
 function defaultSkillsDir(): string {
   return SKILLS_DIR;
+}
+
+function scopeNamesInWrittenGrid(): ReadonlySet<string> {
+  try {
+    const parsed = JSON.parse(readFileSync(scopeGridPath(), "utf-8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return new Set();
+    return new Set(Object.keys(parsed as Record<string, unknown>));
+  } catch {
+    return new Set();
+  }
 }
 
 // Extract a simple scalar frontmatter field (inline or single-quoted/double-
@@ -400,17 +496,22 @@ function scalarField(frontmatter: string, key: string): string {
 interface ScopeFront {
   name: string;
   description: string;
+  plugin?: string;
+  runner?: boolean;
 }
 
 // Read a scope file's frontmatter. Throws on a missing frontmatter block or a
 // missing `name` (the generator must never silently emit a malformed runner).
 function readScopeFront(path: string): ScopeFront {
   const body = readFileSync(path, "utf-8");
-  const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) throw new Error(`Scope file missing frontmatter: ${path}`);
-  const fm = m[1];
+  const fm = frontmatterBlock(body);
+  if (fm === null) throw new Error(`Scope file missing frontmatter: ${path}`);
   const name = scalarField(fm, "name");
   if (!name) throw new Error(`Scope file ${path} missing required frontmatter: name`);
+  const plugin = scalarField(fm, "plugin");
+  const runnerRaw = scalarField(fm, "runner");
+  let runner: boolean | undefined;
+  if (runnerRaw === "true" || runnerRaw === "false") runner = runnerRaw === "true";
   let description = scalarField(fm, "description");
   // Tolerate a folded/block description ('>' or '|') by stitching the first
   // non-empty continuation line — the runner description is one line anyway.
@@ -424,7 +525,10 @@ function readScopeFront(path: string): ScopeFront {
       if (t.length > 0) { description = t; break; }
     }
   }
-  return { name, description };
+  const front: ScopeFront = { name, description };
+  if (plugin) front.plugin = plugin;
+  if (runner !== undefined) front.runner = runner;
+  return front;
 }
 
 // Discover the shipped scope names (sorted, platform-independent). Each scope
@@ -433,31 +537,46 @@ function readScopeFront(path: string): ScopeFront {
 export function discoverScopes(): Record<string, ScopeFront> {
   const dir = scopesDir();
   const out: Record<string, ScopeFront> = {};
+  const gridNames = scopeNamesInWrittenGrid();
   let files: string[];
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
-  } catch {
+  } catch (err) {
+    console.error(`Warning: scope directory not readable at ${dir}: ${errorMessage(err)}`);
     files = [];
   }
   for (const f of files) {
     const front = readScopeFront(join(dir, f));
+    if (!isPluginEnabled(front.plugin ?? "aidlc") && !gridNames.has(front.name)) continue;
     out[front.name] = front;
   }
   return out;
 }
 
+export function defaultScopeBatch(discovered: Record<string, ScopeFront> = discoverScopes()): string[] {
+  return Object.keys(discovered)
+    .filter((scope) => discovered[scope].runner === true)
+    .sort();
+}
+
+function scopeRunnerDirName(scope: string, front: Pick<ScopeFront, "plugin">): string {
+  return front.plugin ? scope : `aidlc-${scope}`;
+}
+
 // Render the SKILL.md body for one scope-runner. Spec-conformant frontmatter
-// (`name` == dir name == `aidlc-<scope>`), NO `hooks:` block (the six spine
+// (`name` == dir name), NO `hooks:` block (the six spine
 // hooks live in settings.json project-wide, inherited by every runner), and
 // a ~6-line shell that runs the engine forwarding loop with the scope baked in.
 export function renderRunner(scope: string, description: string): string {
-  const dir = `aidlc-${scope}`;
+  const front = discoverScopes()[scope];
+  const dir = scopeRunnerDirName(scope, front ?? {});
   // Normalise the scope's one-line description into a sentence (trailing period)
   // so it reads cleanly when stitched between the lead-in and the packaging note.
   const raw = (description || `Run the AI-DLC workflow with the ${scope} scope`).trim();
   const desc = /[.!?]$/.test(raw) ? raw : `${raw}.`;
   return `---
 name: ${dir}
+generated-by: aidlc-runner-gen
 description: >
   Run the AI-DLC workflow with the ${scope} scope baked in — no scope
   detection. ${desc} Packaging over \`/aidlc --scope ${scope}\`, which works
@@ -490,14 +609,15 @@ resumes it. To run a different scope, use \`/aidlc --scope <other>\` instead.
 
 // The target SKILL.md path for one scope-runner under a skills dir.
 function scopeRunnerPath(skillsDir: string, scope: string): string {
-  return join(skillsDir, `aidlc-${scope}`, "SKILL.md");
+  const front = discoverScopes()[scope];
+  return join(skillsDir, scopeRunnerDirName(scope, front ?? {}), "SKILL.md");
 }
 
 // Resolve the batch of scopes to generate: --all → every shipped scope;
-// otherwise the FIRST_BATCH (filtered to scopes that actually have a file).
+// otherwise scopes whose frontmatter declares `runner: true`.
 function resolveBatch(all: boolean, discovered: Record<string, ScopeFront>): string[] {
   if (all) return Object.keys(discovered).sort();
-  return FIRST_BATCH.filter((s) => s in discovered).sort();
+  return defaultScopeBatch(discovered);
 }
 
 function parseScopeArgs(argv: string[]): { check: boolean; all: boolean; out: string | null } {
@@ -520,8 +640,22 @@ function handleScopes(rest: string[]): void {
   const batch = resolveBatch(all, discovered);
 
   if (batch.length === 0) {
-    console.error("No scope files found — nothing to generate.");
-    process.exit(1);
+    if (pluginsEnabled() === null) {
+      console.error(
+        `Warning: no scope-runner batch resolved from ${scopesDir()}. ` +
+          "No pruning performed. Likely causes: no scope files with runner:true found, " +
+          "or the scope directory is missing or mispointed.",
+      );
+      console.log("No scope files with runner:true found; nothing to generate.");
+      return;
+    }
+    if (!check) pruneScopeRunners(skillsDir, new Set());
+    console.log(
+      check
+        ? "No enabled scope files with runner:true; nothing to check."
+        : "No enabled scope files with runner:true; pruned stale scope-runners; nothing to generate.",
+    );
+    return;
   }
 
   if (check) {
@@ -552,7 +686,30 @@ function handleScopes(rest: string[]): void {
     writeFileSync(path, renderRunner(scope, discovered[scope].description), "utf-8");
     console.log(`wrote ${path}`);
   }
+  pruneScopeRunners(skillsDir, new Set(batch));
   console.log(`Generated ${batch.length} scope-runner(s): ${batch.join(", ")}`);
+}
+
+function scopeRunnerSlugFromBody(body: string): string | null {
+  if (!body.includes("aidlc-orchestrate.ts next --scope")) return null;
+  const m = body.match(/aidlc-orchestrate\.ts\s+next\s+--scope\s+([a-z][a-z0-9-]*)\b/);
+  return m?.[1] ?? null;
+}
+
+function pruneScopeRunners(skillsDir: string, keep: ReadonlySet<string>): void {
+  if (!existsSync(skillsDir)) return;
+  const legacyBareSlugs = pluginOwnedScopeSlugsForLegacy();
+  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = join(skillsDir, entry.name);
+    const slug = generatedRunnerSlugForPrune(
+      join(dir, "SKILL.md"),
+      entry.name,
+      scopeRunnerSlugFromBody,
+      legacyBareSlugs,
+    );
+    if (slug && !keep.has(slug)) rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // =========================================================================

@@ -65,7 +65,7 @@ The orchestration engine emits seven kinds today: `run-stage`, `invoke-swarm`, `
 
 `run-stage` folds the approval-gate decision into its `gate` field. The engine has already decided whether this stage gates for every deterministic case — bootstrap initialization stages auto-proceed (`gate: false`), every other EXECUTE stage gates (`gate: true`). One case is **not** deterministic and arrives as the sentinel `gate: "unresolved"`:
 
-- **`gate: "unresolved"`** — the first Construction Bolt's gate depends on the **walking-skeleton stance**, which no parser can derive from a team's free-form `## Walking Skeleton` practices prose. This is your knowledge-work, handed back to the engine. Do NOT run the stage body yet. Instead: read the `## Walking Skeleton` section (resolution order `aidlc/spaces/<space>/memory/org.md` → `team.md` → `project.md`; most-specific non-empty statement wins) and classify the stance — **"always"/"every greenfield feature"** → `on`; **"never"** → `off`; **"scope-dependent"/unspecified/empty** → `scope-dependent`. Honour the `PRACTICES_OVERRIDE` judgement (a bolt-plan marker contradicting practices loses; practices wins — emit the override row first). Then `report --skeleton-stance <on|off|scope-dependent>`; the next `next` re-emits this same stage with the now-determined boolean gate. See the conductor persona for the full classification rules.
+- **`gate: "unresolved"`** — the first Construction Bolt's gate depends on the **walking-skeleton stance**, which no parser can derive from a team's free-form `## Walking Skeleton` practices prose. This is your knowledge-work, handed back to the engine. Do NOT run the stage body yet. Instead: read the `## Walking Skeleton` section (resolution order `aidlc/spaces/<space>/memory/org.md` → `team.md` → `project.md`; most-specific non-empty statement wins) and classify the stance — **"always"/"every greenfield feature"** → `on`; **"never"** → `off`; **"scope-dependent"/unspecified/empty** → `scope-dependent` (the engine then uses the active scope file's `skeleton:` field). Honour the `PRACTICES_OVERRIDE` judgement (a bolt-plan marker contradicting practices loses; practices wins — emit the override row first). Then `report --skeleton-stance <on|off|scope-dependent>`; the next `next` re-emits this same stage with the now-determined boolean gate. See the conductor persona for the full classification rules.
 - **`gate: false`** — run the stage body and complete it directly. `report --stage "<directive.stage>" --result completed`. No human approval, no learnings ritual (these are the auto-proceeding bootstrap stages).
 - **`gate: true`** — after the stage body produces its artifacts, run the **reviewer step (§12a, if declared)** and the **§13 learnings ritual**, then present the **approval gate**:
   1. **Reviewer step (§12a):** If `directive.reviewer` is present, invoke the reviewer as a sub-agent (spawn the agent role named in `directive.reviewer` — the harness resolves its `.codex/agents/aidlc-<role>-agent.toml`, which loads its own persona via `developer_instructions`; do not inject it in the prompt). Pass: stage definition path, Q&A file path, artifact file paths, and (on per-unit stages, i.e. when directive.unit is present) the resolved paths in directive.consumes so the reviewer can verify cross-unit contract claims against the shared inception artifacts. Do NOT pass memory.md or plan.md. The reviewer's read scope is the current unit's artifacts plus the passed contract paths; it must not read other units' construction/<other-unit>/ content through any tool (file reads, grep, glob, and shell patterns that span sibling unit paths all count) except to spot-check an integration point the current unit's design explicitly names, and only the owning file, resolved via the shared contracts rather than by searching the sibling's directory. On a per-unit stage, BEFORE invoking the reviewer write the dispatch record `.aidlc-reviewer-dispatch.json` beside the intent's `aidlc-state.md`: `{"reviewer": <directive.reviewer>, "stage": <stage slug>, "unit": <directive.unit>, "exempt": [<each resolved directive.consumes path>, <stage file path>, <Q&A file path>]}` - append the single owning file's path to exempt when the current unit's design explicitly names an integration point in a sibling unit (the record is where that carve-out is granted); the reviewer-scope PreToolUse hook enforces the read-scope bound from this record while the review is in flight. Write a fresh record on each re-invoke. Wait for the reviewer to return. Delete the dispatch record, then read the `## Review` section verdict from the primary artifact. If NOT-READY and iterations < `directive.reviewer_max_iterations`: send artifact + findings back to the builder, re-run stage body to fix, then re-invoke reviewer. If READY or iterations exhausted: proceed.
@@ -128,7 +128,9 @@ The composer proposes; the human decides; the deterministic validator guards. Yo
 
 The orchestration engine resolves scope-level stage routing internally (it reads the compiled scope grid the table below summarises). The summary table is kept here as human-readable data — not dispatch logic — and is regenerated, never hand-edited. (One carve-out: the dispatched composer agent APPENDS approved composed scopes to the runtime scope registry (`.codex/scopes/aidlc-<name>.md` + a `scope-grid.json` entry) - that is the sanctioned write path for composed scopes, not a hand-edit; this summary table itself stays generated.)
 
-Source of truth: one file per scope under `.codex/scopes/aidlc-<name>.md` (identity + keywords + description) plus each stage's `scopes:` frontmatter (membership), transposed into the compiled grid at `bun .codex/tools/aidlc-graph.ts compile`.
+Source of truth: one file per scope under `.codex/scopes/aidlc-<name>.md` (identity + keywords + description + skeleton default) plus each stage's `scopes:` frontmatter (membership), transposed into the compiled grid at `bun .codex/tools/aidlc-graph.ts compile`; regenerate this table with `bun .codex/tools/aidlc-utility.ts scope-table`.
+
+<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` - do NOT hand-edit -->
 
 | Scope          | Depth         | TestStrategy | EXECUTE / Total |
 |----------------|---------------|--------------|-----------------|
@@ -141,6 +143,8 @@ Source of truth: one file per scope under `.codex/scopes/aidlc-<name>.md` (ident
 | refactor       | Minimal       | (default)    | 8 / 32          |
 | security-patch | Minimal       | (default)    | 10 / 32         |
 | workshop       | Standard      | Minimal      | 25 / 32         |
+
+<!-- END: compiled scope grid -->
 
 ---
 
@@ -156,7 +160,9 @@ Source of truth: one file per scope under `.codex/scopes/aidlc-<name>.md` (ident
 
 ## Stage Graph
 
-The engine reads the compiled `data/stage-graph.json` directly for all routing; this table is the human-readable mirror of that graph (the 32 stages, their phase, execution mode, lead/support agents, and run mode) — data, not dispatch logic.
+The engine reads the compiled `data/stage-graph.json` directly for all routing; this table is the human-readable mirror of that graph (each compiled stage, its phase, execution mode, lead/support agents, and run mode) — data, not dispatch logic.
+
+<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->
 
 | Slug | # | Stage | Phase | Execution | Lead Agent | Support Agents | Mode |
 |------|---|-------|-------|-----------|------------|----------------|------|
@@ -170,7 +176,7 @@ The engine reads the compiled `data/stage-graph.json` directly for all routing; 
 | team-formation | 1.5 | Team Formation | Ideation | CONDITIONAL | aidlc-delivery-agent | — | inline |
 | rough-mockups | 1.6 | Rough Mockups | Ideation | CONDITIONAL | aidlc-design-agent | aidlc-product-agent | inline |
 | approval-handoff | 1.7 | Approval & Handoff | Ideation | ALWAYS | aidlc-delivery-agent | aidlc-product-agent | inline |
-| reverse-engineering | 2.1 | Reverse Engineering | Inception | CONDITIONAL | aidlc-developer-agent | aidlc-architect-agent | subagent (aidlc-developer-agent → aidlc-architect-agent) |
+| reverse-engineering | 2.1 | Reverse Engineering | Inception | CONDITIONAL | aidlc-developer-agent | aidlc-architect-agent | subagent |
 | practices-discovery | 2.2 | Practices Discovery | Inception | CONDITIONAL | aidlc-pipeline-deploy-agent | aidlc-quality-agent, aidlc-developer-agent, aidlc-devsecops-agent | inline |
 | requirements-analysis | 2.3 | Requirements Analysis | Inception | ALWAYS | aidlc-product-agent | — | inline |
 | user-stories | 2.4 | User Stories | Inception | CONDITIONAL | aidlc-product-agent | aidlc-design-agent | inline |
@@ -182,7 +188,7 @@ The engine reads the compiled `data/stage-graph.json` directly for all routing; 
 | nfr-requirements | 3.2 | NFR Requirements | Construction | CONDITIONAL | aidlc-architect-agent | aidlc-devsecops-agent, aidlc-compliance-agent, aidlc-quality-agent | inline |
 | nfr-design | 3.3 | NFR Design | Construction | CONDITIONAL | aidlc-architect-agent | aidlc-aws-platform-agent | inline |
 | infrastructure-design | 3.4 | Infrastructure Design | Construction | CONDITIONAL | aidlc-aws-platform-agent | aidlc-devsecops-agent, aidlc-compliance-agent | inline |
-| code-generation | 3.5 | Code Generation | Construction | ALWAYS | aidlc-developer-agent | — | subagent (aidlc-developer-agent) |
+| code-generation | 3.5 | Code Generation | Construction | ALWAYS | aidlc-developer-agent | — | subagent |
 | build-and-test | 3.6 | Build and Test | Construction | ALWAYS | aidlc-quality-agent | aidlc-devsecops-agent | inline |
 | ci-pipeline | 3.7 | CI Pipeline | Construction | CONDITIONAL | aidlc-pipeline-deploy-agent | — | inline |
 | deployment-pipeline | 4.1 | Deployment Pipeline | Operation | CONDITIONAL | aidlc-pipeline-deploy-agent | — | inline |
@@ -192,6 +198,8 @@ The engine reads the compiled `data/stage-graph.json` directly for all routing; 
 | incident-response | 4.5 | Incident Response | Operation | CONDITIONAL | aidlc-operations-agent | — | inline |
 | performance-validation | 4.6 | Performance Validation | Operation | CONDITIONAL | aidlc-quality-agent | — | inline |
 | feedback-optimization | 4.7 | Feedback & Optimization | Operation | CONDITIONAL | aidlc-operations-agent | aidlc-aws-platform-agent | inline |
+
+<!-- END: compiled stage graph -->
 
 ---
 

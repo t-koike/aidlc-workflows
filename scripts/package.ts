@@ -814,9 +814,21 @@ const PLUGINS_ROOT = join(REPO_ROOT, "plugins");
 
 function discoverPluginNames(): string[] {
   if (!existsSync(PLUGINS_ROOT)) return [];
-  return readdirSync(PLUGINS_ROOT)
+  const names = readdirSync(PLUGINS_ROOT)
     .filter((n) => existsSync(join(PLUGINS_ROOT, n, ".aidlc-plugin", "plugin.json")))
     .sort();
+  // `aidlc` and `aidlc-*` are core's namespace: `aidlc` is the implicit core
+  // plugin in selection, and an `aidlc-<x>` plugin's runner dirs land on core
+  // runner paths (runner-gen uses the bare slug for plugin stages but
+  // `aidlc-<slug>` for core), silently clobbering them.
+  for (const n of names) {
+    if (n === "aidlc" || n.startsWith("aidlc-")) {
+      throw new Error(
+        `plugins/${n}: plugin names must not be "aidlc" or start with "aidlc-" (reserved for core; an aidlc-<x> plugin collides with core runner paths). Rename the plugin directory.`
+      );
+    }
+  }
+  return names;
 }
 
 // Per-harness plugin projection descriptor, DERIVED from each harness's own
@@ -840,7 +852,17 @@ function pluginTargetFor(harnessName: string): PluginTarget | null {
 // the --check path (into a temp dir, then byte-compare) call it identically.
 function buildPluginProjection(pluginName: string, harnessName: string, outDir: string): void {
   const pluginSrc = join(PLUGINS_ROOT, pluginName);
-  const manifest = JSON.parse(readFileSync(join(pluginSrc, ".aidlc-plugin", "plugin.json"), "utf-8"));
+  const manifestPath = join(pluginSrc, ".aidlc-plugin", "plugin.json");
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  } catch (e) {
+    // Name the plugin and the file, not a raw JSON.parse stack that reads as
+    // a packager crash - one plugin's bad manifest should be identifiable.
+    throw new Error(
+      `plugins/${pluginName}: cannot parse ${relative(REPO_ROOT, manifestPath)}: ${e instanceof Error ? e.message : String(e)}. Fix the manifest JSON.`
+    );
+  }
   const version = manifest.version || "0.0.1";
   const author = manifest.author || { name: "AIDLC" };
   const description = manifest.description || "";
@@ -848,7 +870,12 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   if (!target) throw new Error(`no plugin target for harness "${harnessName}" (missing manifest)`);
   const { manifestDir, harnessLeaf, kind } = target;
   const templateHooks = join(REPO_ROOT, "scripts", "plugin-hooks-template");
-  const contentDirs = ["stages", "sensors", "tools", "contributions"];
+  // Primitive content copied verbatim into the host plugin projection. Core
+  // scope files keep the `aidlc-` prefix; plugin scope files use
+  // `<plugin>-<name>.md` instead, with frontmatter `name` equal to the stem.
+  // Plugin agent files follow `<plugin>-<role>-agent.md` with the same stem =
+  // frontmatter-name convention.
+  const contentDirs = ["stages", "sensors", "tools", "contributions", "scopes", "agents", "knowledge"];
 
   if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
@@ -915,7 +942,9 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
     );
   }
 
-  // 4. Copy plugin content verbatim (stages keep number/name/bundle/when).
+  // 4. Copy plugin content verbatim (stages keep number/name/plugin/when).
+  // walk() is recursive, so nested phase dirs and knowledge/<agent-slug>/ trees
+  // are preserved without special cases.
   for (const dir of contentDirs) {
     const srcDir = join(pluginSrc, dir);
     if (!existsSync(srcDir)) continue;
@@ -1003,6 +1032,12 @@ if (argv[0] === "plugin" && argv[1] === "build") {
     process.exit(1);
   }
   // Proper usage errors, never a raw ENOENT/rmSync stack (round-3).
+  // Reserved-name check FIRST so the error names the real problem even when
+  // the directory doesn't exist yet (same rule discoverPluginNames enforces).
+  if (pluginName === "aidlc" || pluginName.startsWith("aidlc-")) {
+    console.error(`plugin name "${pluginName}" is reserved: names must not be "aidlc" or start with "aidlc-" (an aidlc-<x> plugin collides with core runner paths). Rename the plugin.`);
+    process.exit(1);
+  }
   if (!discoverPluginNames().includes(pluginName)) {
     console.error(`unknown plugin "${pluginName}" (have: ${discoverPluginNames().join(", ") || "none"})`);
     process.exit(1);

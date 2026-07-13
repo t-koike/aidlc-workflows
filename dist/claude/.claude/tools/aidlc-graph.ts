@@ -42,20 +42,26 @@
 // See docs/reference/16-artifact-vocabulary.md for artifact naming.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  _resetAgentsForTests,
+  _resetHarnessDataForTests,
   _resetScopeMappingForTests,
+  _resetStageGraphForTests,
   activeSpace,
   type AgentMetadata,
   errorMessage,
   gridCostSummary,
   loadAgents,
   loadScopeMapping,
+  loadScopeMetadata,
   harnessDir,
   PHASES,
   type Phase,
   loadStageGraph,
+  loadStageGraphAll,
+  pluginsEnabled,
   type ScopeCostSummary,
   mustGet,
   mustPop,
@@ -65,6 +71,7 @@ import {
   resolveProjectDir,
   type ScopeDefinition,
   type StageEntry,
+  stageEnabledBySelection,
   toPosix,
   validScopes,
   withAuditLock,
@@ -120,6 +127,8 @@ export interface SensorResolution {
 // runtime callers stay source-compatible without caring about the
 // extended shape.
 export interface GraphStage extends StageEntry {
+  plugin?: string;
+  enabled?: false;
   condition?: string;
   produces: string[];
   // optional_produces - artifacts the stage MAY write per unit (marked
@@ -328,13 +337,16 @@ let _scopeGrid: ScopeGrid | null = null;
 
 /** Reset all module-level caches. Test-only — used when fixture
  *  injection via AIDLC_STAGE_GRAPH swaps the backing file mid-process.
- *  Also resets lib.ts's scope-mapping cache (AIDLC_SCOPE_MAPPING env-seam)
- *  because the export consumer reads both graph and scope-mapping in one
- *  call; resetting only the local cache leaves a stale scope view. */
+ *  Also resets lib.ts's scope-mapping and agent caches (AIDLC_SCOPE_MAPPING /
+ *  AIDLC_AGENTS_DIR env-seams) because compile/export consumers read them in
+ *  the same call; resetting only the local cache leaves stale fixture views. */
 export function __resetGraphCache(): void {
   _graph = null;
   _artifactsRegistry = null;
   _scopeGrid = null;
+  _resetHarnessDataForTests();
+  _resetStageGraphForTests();
+  _resetAgentsForTests();
   _resetScopeMappingForTests();
 }
 
@@ -376,6 +388,8 @@ const FIELD_ORDER = [
   "slug",
   "number",
   "name",
+  "plugin",
+  "enabled",
   "phase",
   "execution",
   "condition",
@@ -1123,19 +1137,22 @@ export function keywordCollisions(granted: string[]): string[] {
 }
 
 /** Union of produces[] and optional_produces[] across all stages. */
+export function artifactsRegistryFor(stages: readonly GraphStage[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const stage of stages) {
+    for (const name of stage.produces ?? []) {
+      names.add(name);
+    }
+    for (const name of stage.optional_produces ?? []) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
 export function artifactsRegistry(): ReadonlySet<string> {
   if (!_artifactsRegistry) {
-    const stages = loadGraph();
-    const names = new Set<string>();
-    for (const stage of stages) {
-      for (const name of stage.produces ?? []) {
-        names.add(name);
-      }
-      for (const name of stage.optional_produces ?? []) {
-        names.add(name);
-      }
-    }
-    _artifactsRegistry = names;
+    _artifactsRegistry = artifactsRegistryFor(loadGraph());
   }
   return _artifactsRegistry;
 }
@@ -1253,16 +1270,27 @@ export interface ScopeGrid {
  *  Slug rows = stage order (the array passed in — already numeric-sorted
  *  by compileStageGraph). A stage that names a scope is EXECUTE under it;
  *  every other scope/stage cell is SKIP. Pure — no I/O. */
-export function transposeScopeGrid(stages: GraphStage[]): ScopeGrid {
+export function transposeScopeGrid(
+  stages: GraphStage[],
+  allowedScopes?: ReadonlySet<string>,
+): ScopeGrid {
   const scopeNames = new Set<string>();
   for (const s of stages) {
-    for (const name of s.scopes ?? []) scopeNames.add(name);
+    for (const name of s.scopes ?? []) {
+      if (allowedScopes === undefined || allowedScopes.has(name)) scopeNames.add(name);
+    }
+  }
+  if (allowedScopes !== undefined) {
+    for (const name of allowedScopes) scopeNames.add(name);
   }
   const grid: ScopeGrid = {};
   for (const scope of [...scopeNames].sort()) {
     const stagesMap: Record<string, "EXECUTE" | "SKIP"> = {};
     for (const s of stages) {
-      stagesMap[s.slug] = (s.scopes ?? []).includes(scope) ? "EXECUTE" : "SKIP";
+      stagesMap[s.slug] =
+        s.phase === "initialization" || (s.scopes ?? []).includes(scope)
+          ? "EXECUTE"
+          : "SKIP";
     }
     grid[scope] = { stages: stagesMap };
   }
@@ -1312,6 +1340,53 @@ export function mergeComposedScopes(fresh: ScopeGrid, onDiskJson: string | null)
   return sorted;
 }
 
+function composedScopeNames(
+  onDiskJson: string | null,
+  stockScopeNames: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (!onDiskJson) return new Set();
+  let onDisk: unknown;
+  try {
+    onDisk = JSON.parse(onDiskJson);
+  } catch {
+    return new Set();
+  }
+  if (typeof onDisk !== "object" || onDisk === null || Array.isArray(onDisk)) {
+    return new Set();
+  }
+  return new Set(
+    Object.keys(onDisk as Record<string, unknown>)
+      .filter((name) => !stockScopeNames.has(name))
+      .sort(),
+  );
+}
+
+function stageDeclaredScopeNames(stages: readonly Pick<GraphStage, "scopes">[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const stage of stages) {
+    for (const name of stage.scopes ?? []) names.add(name);
+  }
+  return names;
+}
+
+function filterScopeGrid(
+  grid: ScopeGrid,
+  allowedScopes: ReadonlySet<string> | null,
+  exemptScopes: ReadonlySet<string> = new Set(),
+): ScopeGrid {
+  if (allowedScopes === null) return grid;
+  const filtered: ScopeGrid = {};
+  for (const scope of Object.keys(grid).sort()) {
+    if (allowedScopes.has(scope) || exemptScopes.has(scope)) filtered[scope] = grid[scope];
+  }
+  return filtered;
+}
+
+function enabledScopeNames(): ReadonlySet<string> | null {
+  if (pluginsEnabled() === null) return null;
+  return new Set(Object.keys(loadScopeMetadata()).sort());
+}
+
 /** Parse a numeric stage identifier like "3.5" into a tuple [phase, index]
  *  for total-ordering comparison. Returns negative, zero, or positive. */
 export function numericStageOrder(a: string, b: string): number {
@@ -1345,7 +1420,7 @@ export function stageGraphDrift(): {
   uncompiledStages: string[];
   graphCount: number;
 } {
-  const graphSlugs = new Set(loadStageGraph().map((s) => s.slug));
+  const graphSlugs = new Set(loadStageGraphAll().map((s) => s.slug));
   const diskSlugs = new Set<string>();
   const root = stagesDir();
   for (const phase of PHASES) {
@@ -1373,6 +1448,69 @@ function titleCaseSlug(slug: string): string {
     .join(" ");
 }
 
+function stagePluginOwner(stage: Pick<GraphStage, "plugin">): string {
+  return stage.plugin ?? "aidlc";
+}
+
+function applyPluginSelection(stages: GraphStage[]): void {
+  for (const stage of stages) {
+    delete stage.enabled;
+    if (!stageEnabledBySelection(stage)) stage.enabled = false;
+  }
+}
+
+function validateSelectionClosure(stages: GraphStage[]): void {
+  const producersByArtifact = new Map<string, GraphStage[]>();
+  for (const stage of stages) {
+    for (const artifact of [...(stage.produces ?? []), ...(stage.optional_produces ?? [])]) {
+      const producers = producersByArtifact.get(artifact) ?? [];
+      producers.push(stage);
+      producersByArtifact.set(artifact, producers);
+    }
+  }
+
+  for (const stage of stages.filter((s) => s.enabled !== false)) {
+    for (const consume of stage.consumes ?? []) {
+      if (!consume.required) continue;
+      const producers = producersByArtifact.get(consume.artifact) ?? [];
+      if (producers.length === 0) continue;
+      const enabledProducers = producers.filter((p) => p.enabled !== false);
+      if (enabledProducers.length > 0) continue;
+      const producerList = producers
+        .map((p) => `${p.slug} (${stagePluginOwner(p)})`)
+        .sort()
+        .join(", ");
+      const disabledPlugins = [...new Set(producers.map(stagePluginOwner))].sort();
+      throw new Error(
+        `Plugin selection closure failed: enabled stage "${stage.slug}" consumes required artifact "${consume.artifact}", ` +
+          `but its only producer(s) are disabled: ${producerList}. ` +
+          `Enable plugin(s) ${disabledPlugins.join(", ")} or disable the consuming stage.`
+      );
+    }
+  }
+}
+
+/** Enabled stages whose requires_stage points at a selection-disabled stage.
+ *  NOT part of the closure ERROR: an ordering edge to a never-running stage is
+ *  vacuous (topoSort ignores edges outside the enabled subset), and the shipped
+ *  plugin-only flow legitimately runs plugin stages whose requires_stage names
+ *  core stages. But the silently-dropped edge is worth surfacing - doctor
+ *  reports these as an advisory so a surprising walk order is explainable. */
+export function selectionDroppedOrderingEdges(
+  stages: Array<{ slug: string; plugin?: string; enabled?: boolean; requires_stage?: string[] }>,
+): string[] {
+  const bySlug = new Map(stages.map((s) => [s.slug, s]));
+  const dropped: string[] = [];
+  for (const stage of stages.filter((s) => s.enabled !== false)) {
+    for (const dep of stage.requires_stage ?? []) {
+      const depStage = bySlug.get(dep);
+      if (!depStage || depStage.enabled !== false) continue;
+      dropped.push(`${stage.slug} requires ${dep} (${stagePluginOwner(depStage)}, disabled)`);
+    }
+  }
+  return dropped.sort();
+}
+
 /** Regenerate stage-graph.json from the 31 YAML stage files.
  *  Bootstraps number + name from the existing JSON (the "computed
  *  not authored" contract — see stage-definition.md). Asserts the
@@ -1389,7 +1527,7 @@ export function compileStageGraph(): {
   // Harvest number + name mappings from existing JSON. A slug already in
   // the JSON keeps its pinned number + name (the "computed not authored,
   // stable thereafter" contract); a NEW slug is auto-seeded below.
-  const existing = loadStageGraph();
+  const existing = loadStageGraphAll();
   const numberBySlug = new Map(existing.map((s) => [s.slug, s.number]));
   const nameBySlug = new Map(existing.map((s) => [s.slug, s.name]));
 
@@ -1451,6 +1589,35 @@ export function compileStageGraph(): {
         );
       }
       const slug = validation.data.slug;
+      const plugin = validation.data.plugin;
+      if (plugin !== undefined) {
+        if (plugin === "aidlc") {
+          throw new Error(
+            `${filePath}: stage "${slug}" declares plugin "aidlc"; omit plugin for core stages.`
+          );
+        }
+        // `aidlc-` is core's namespace: runner dirs are `aidlc-<slug>` for core
+        // but the bare slug for plugin stages, so a plugin named `aidlc-<x>`
+        // generates runner paths identical to core's and silently clobbers them
+        // (/aidlc-<x>-... routes to the wrong stage).
+        if (plugin.startsWith("aidlc-")) {
+          throw new Error(
+            `${filePath}: stage "${slug}" declares plugin "${plugin}"; the "aidlc-" prefix is reserved for core (a plugin named aidlc-<x> collides with core runner paths). Rename the plugin.`
+          );
+        }
+        if (!slug.startsWith(`${plugin}-`)) {
+          throw new Error(
+            `${filePath}: stage "${slug}" declares plugin "${plugin}", but plugin-owned stage slugs must start with "${plugin}-". Rename the slug or fix the plugin field.`
+          );
+        }
+      }
+
+      const filenameStem = basename(filePath, ".md");
+      if (filenameStem !== slug) {
+        throw new Error(
+          `${filePath}: stage filename stem "${filenameStem}" does not match frontmatter slug "${slug}". Rename the file or fix the slug.`
+        );
+      }
 
       // Duplicate-slug guard: two YAML files claiming the same slug would
       // silently produce a corrupt graph (two rows, findStageBySlug returns
@@ -1491,6 +1658,7 @@ export function compileStageGraph(): {
 
   // Sort by numeric order (phase-prefix.index).
   stages.sort((a, b) => numericStageOrder(a.number, b.number));
+  const stockScopeNames = stageDeclaredScopeNames(stages);
 
   // Resolve per-stage rule chain. Strict-additive: every applicable rule
   // appears in rules_in_context (org+team+project + phase when stage's
@@ -1511,6 +1679,9 @@ export function compileStageGraph(): {
   for (const stage of stages) {
     stage.sensors_applicable = resolveSensorsForStage(stage, sensorsById);
   }
+
+  applyPluginSelection(stages);
+  validateSelectionClosure(stages);
 
   // Edge-local invariant: for every edge A in B.requires_stage,
   // numericOrder(A) < numericOrder(B). Topological sort is non-unique
@@ -1548,10 +1719,26 @@ export function compileStageGraph(): {
   } catch {
     /* first compile: no grid on disk yet */
   }
+  const selectedScopeNames = enabledScopeNames();
+  const composedNames = composedScopeNames(onDiskGrid, stockScopeNames);
+  const seededScopeNames =
+    selectedScopeNames === null
+      ? undefined
+      : new Set([...selectedScopeNames].filter((name) => !composedNames.has(name)));
   return {
     json: canonicalStageGraphJson(stages),
     gridJson: canonicalScopeGridJson(
-      mergeComposedScopes(transposeScopeGrid(stages), onDiskGrid),
+      filterScopeGrid(
+        mergeComposedScopes(
+          transposeScopeGrid(
+            stages.filter((s) => s.enabled !== false),
+            seededScopeNames,
+          ),
+          onDiskGrid,
+        ),
+        selectedScopeNames,
+        composedNames,
+      ),
     ),
     stages,
   };
@@ -1603,6 +1790,9 @@ function buildGraphStage(
     // discipline as rules_in_context — REQUIRED on GraphStage.
     sensors_applicable: [],
   };
+  if (parsed.plugin !== undefined) {
+    stage.plugin = parsed.plugin;
+  }
   if (parsed.condition !== undefined) {
     stage.condition = parsed.condition;
   }

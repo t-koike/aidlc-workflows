@@ -485,6 +485,44 @@ outputs: b
 ---
 `;
 
+const PLUGIN_METADATA = `---
+slug: test-pro-integration
+number: 3.85
+name: Cross-Unit Integration Testing
+plugin: test-pro
+phase: construction
+execution: CONDITIONAL
+condition: x
+lead_agent: aidlc-quality-agent
+mode: inline
+support_agents: []
+produces: []
+consumes: []
+requires_stage: []
+inputs: a
+outputs: b
+---
+`;
+
+const LEGACY_BUNDLE_METADATA = `---
+slug: test-pro-integration
+number: 3.85
+name: Cross-Unit Integration Testing
+bundle: test-pro
+phase: construction
+execution: CONDITIONAL
+condition: x
+lead_agent: aidlc-quality-agent
+mode: inline
+support_agents: []
+produces: []
+consumes: []
+requires_stage: []
+inputs: a
+outputs: b
+---
+`;
+
 // ============================================================
 // Positive baseline (.sh assertions 1-6)
 // ============================================================
@@ -768,6 +806,33 @@ describe("reviewer fields parse/emit (V1)", () => {
     const reparsed = parseStageFrontmatter(yaml) as Record<string, unknown>;
     expect(typeof reparsed.reviewer_max_iterations).toBe("number");
     expect(reparsed.reviewer_max_iterations).toBe(2);
+  });
+});
+
+describe("plugin metadata parse/emit", () => {
+  test("number/name/plugin survive parse -> emit -> parse", () => {
+    const obj = parseStageFrontmatter(PLUGIN_METADATA) as Record<string, unknown>;
+    const yaml = emitStageFrontmatter(obj);
+    expect(yaml).toContain("number: 3.85\n");
+    expect(yaml).toContain("name: Cross-Unit Integration Testing\n");
+    expect(yaml).toContain("plugin: test-pro\n");
+    expect(yaml).not.toContain("bundle:");
+    const reparsed = parseStageFrontmatter(yaml) as Record<string, unknown>;
+    expect(reparsed.number).toBe("3.85");
+    expect(reparsed.name).toBe("Cross-Unit Integration Testing");
+    expect(reparsed.plugin).toBe("test-pro");
+  });
+
+  test("renamed bundle: key fails schema validation with the fix named", () => {
+    // The parser is a dumb extractor (it captures whatever scalar keys are
+    // present); the schema is the boundary that rejects the pre-rename key.
+    const obj = parseStageFrontmatter(LEGACY_BUNDLE_METADATA) as Record<string, unknown>;
+    expect(obj.plugin).toBeUndefined();
+    expect(obj.bundle).toBe("test-pro");
+    const r = validateStageFrontmatter(obj);
+    expect(r.valid).toBe(false);
+    if (r.valid) return;
+    expect(r.errors).toContain("bundle: was renamed; write plugin: for ownership");
   });
 });
 

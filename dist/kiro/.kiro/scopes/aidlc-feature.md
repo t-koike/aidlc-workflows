@@ -3,6 +3,8 @@ name: feature
 depth: Standard
 keywords: []
 description: Default for new features, practical depth
+skeleton: on
+runner: true
 ---
 
 # feature scope

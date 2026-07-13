@@ -20,6 +20,7 @@ name: feature
 depth: Standard
 keywords: []
 description: Default for new features, practical depth
+skeleton: on
 ---
 
 # feature scope
@@ -31,11 +32,25 @@ The frontmatter fields divide into one required field and three optional knobs:
 
 | Field | Required | What it does |
 |-------|----------|--------------|
-| `name` | Yes | The scope name. Must equal the filename stem (`aidlc-feature.md` → `feature`). |
+| `name` | Yes | The scope name. Core files use `aidlc-<name>.md`; plugin scope files use a stem equal to `name`. |
 | `depth` | Yes | The default detail level — `Minimal`, `Standard`, or `Comprehensive`. |
 | `testStrategy` | No | Overrides test volume independent of depth. Defaults to matching `depth`. |
 | `keywords` | No | Natural-language triggers for `/aidlc <freeform text>` auto-detection. Empty list opts out. |
 | `description` | No | The one-liner rendered in `/aidlc --help`. (The compiled scope-table in SKILL.md shows only Scope / Depth / TestStrategy / EXECUTE / Total, leaving the description out.) |
+| `skeleton` | No | `on` opts the scope into the walking-skeleton ceremony when practices are scope-dependent; `off` or absence opts out. |
+
+The loader rejects duplicate scope `name` values across files and names both
+files in the error.
+
+### Walking-skeleton default
+
+The optional `skeleton:` field controls the scope-dependent walking-skeleton
+stance. `skeleton: on` means that when the team's `## Walking Skeleton`
+practices resolve to `scope-dependent`, Construction opens with the
+walking-skeleton ceremony for this scope. `skeleton: off` means the first Bolt
+runs as a regular Bolt. Absence defaults to off, so composed/runtime-approved
+scopes and plugin scopes do not conjure a skeleton Bolt unless they opt in
+explicitly.
 
 **2. The membership tag — each stage's `scopes:` frontmatter.** A stage names the scopes it runs under in its own frontmatter, in `core/aidlc-common/stages/<phase>/<slug>.md`:
 
@@ -70,11 +85,11 @@ Suppose your team wants a `hotfix` scope — leaner than `bugfix`, for the urgen
 
 ### Steps
 
-1. **Drop `core/scopes/aidlc-hotfix.md`.** Copy `aidlc-bugfix.md` (the closest existing scope) and edit the frontmatter: set `name: hotfix`, pick `depth`, add `keywords` if you want freeform auto-detection (`[hotfix, urgent]`), a `description` for the help text, and `testStrategy` only if it should diverge from `depth`. Write a short prose body explaining the intent.
+1. **Drop `core/scopes/aidlc-hotfix.md`.** Copy `aidlc-bugfix.md` (the closest existing scope) and edit the frontmatter: set `name: hotfix`, pick `depth`, add `keywords` if you want freeform auto-detection (`[hotfix, urgent]`), a `description` for the help text, `skeleton: on|off` for the scope-dependent Construction ceremony default, and `testStrategy` only if it should diverge from `depth`. Write a short prose body explaining the intent.
 
 2. **Tag the stages that should run under `hotfix`.** In each stage you want `EXECUTE` (under `core/aidlc-common/stages/<phase>/`), add `hotfix` to its frontmatter `scopes:` list. A stage you don't tag is `SKIP` for the scope. The 3 initialization stages must include it (they always run).
 
-3. **Recompile.** Run `bun .claude/tools/aidlc-graph.ts compile` to transpose the tags into `scope-grid.json`, then regenerate SKILL.md's compiled scope-table (`bun .claude/tools/aidlc-utility.ts scope-table`, paste between the `<!-- BEGIN: compiled ... -->` / `<!-- END: compiled ... -->` markers). Run `bun .claude/tools/aidlc-graph.ts compile --check` and `bun .claude/tools/aidlc-utility.ts scope-table --check` to confirm no drift (exit 0).
+3. **Recompile.** Run `bun .claude/tools/aidlc-graph.ts compile` to transpose the tags into `scope-grid.json`, then refresh SKILL.md's compiled scope-table from `bun .claude/tools/aidlc-utility.ts scope-table`. Run `bun .claude/tools/aidlc-graph.ts compile --check` and `bun .claude/tools/aidlc-utility.ts scope-table --check` to confirm no drift (exit 0).
 
 4. **Verify the scope resolves and is accepted.** Run `/aidlc --doctor`. Then confirm an init under the new scope produces a state file with the right `Scope:` line, and that it's accepted as an env default and as a mid-workflow `--scope` change.
 
@@ -82,7 +97,7 @@ Suppose your team wants a `hotfix` scope — leaner than `bugfix`, for the urgen
 
 6. **Update the scope-aware docs and add a routing test.** Several docs enumerate scopes by hand — the User Guide's scope reference and routing table, the customization chapter's valid-values list, and the orchestrator reference's scope-to-stage mapping. Update them in the same change. If your scope skips stages in a pattern no existing scope uses, add a workflow test modeled on the existing per-scope tests.
 
-7. **(Optional) Generate a typeable runner.** A scope is fully usable via `/aidlc --scope <name>` the moment its file lands — no runner needed. If you want a one-word command (`/aidlc-hotfix`), generate a runner skill: `bun .claude/tools/aidlc-runner-gen.ts scopes --all` emits `skills/aidlc-<scope>/SKILL.md` for every scope file (or edit the generator's `FIRST_BATCH` to ship a curated subset). Each runner is a ~6-line shell that drives `aidlc-orchestrate next --scope <name>` to `done` with the scope baked in; the runner packages an already-runnable scope, and the scope file is its definition. It carries no `hooks:` block: the deterministic spine (audit, sensors, runtime-compile, state validation) is registered project-wide in `settings.json`, so every runner inherits it for free. Re-run the generator (or `scopes --check`) whenever you add or rename a scope file.
+7. **(Optional) Generate a typeable runner.** A scope is fully usable via `/aidlc --scope <name>` the moment its file lands — no runner needed. If you want a one-word command (`/aidlc-hotfix`), add `runner: true` to the scope frontmatter and run `bun .claude/tools/aidlc-runner-gen.ts scopes`; `bun .claude/tools/aidlc-runner-gen.ts scopes --all` emits `skills/aidlc-<scope>/SKILL.md` for every scope file regardless of that flag. Each runner is a ~6-line shell that drives `aidlc-orchestrate next --scope <name>` to `done` with the scope baked in; the runner packages an already-runnable scope, and the scope file is its definition. It carries no `hooks:` block: the deterministic spine (audit, sensors, runtime-compile, state validation) is registered project-wide in `settings.json`, so every runner inherits it for free. Re-run the generator (or `scopes --check`) whenever you add or rename a scope file.
 
 ### What validates automatically
 

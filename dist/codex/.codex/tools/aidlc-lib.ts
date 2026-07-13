@@ -16,6 +16,10 @@ export interface StageEntry {
   number: string;
   name: string;
   phase: string;
+  // Present only when a plugin selection has disabled this node. Enabled nodes
+  // omit the key so an install with no selection keeps byte-identical compiled
+  // data.
+  enabled?: false;
   execution: "ALWAYS" | "CONDITIONAL";
   lead_agent: string;
   support_agents: string[];
@@ -24,6 +28,7 @@ export interface StageEntry {
   // Existing callers read only the 8 required fields above; optional
   // additions are source-compatible. Library code that needs these
   // fields uses the GraphStage type in aidlc-graph.ts (required there).
+  plugin?: string;
   condition?: string;
   produces?: string[];
   // Artifacts the stage MAY write per unit; exempt from the per-unit
@@ -86,6 +91,9 @@ export interface ScopeDefinition {
   testStrategy?: string;
   keywords?: string[];
   description?: string;
+  plugin?: string;
+  runner?: boolean;
+  skeleton?: boolean;
 }
 
 export type CheckboxState = "pending" | "in-progress" | "awaiting-approval" | "revising" | "completed" | "skipped";
@@ -205,20 +213,81 @@ const KNOWN_RULES_SUBDIR: Record<string, string> = {
   ".codex": "aidlc-rules",
 };
 
-function shippedRulesSubdir(): string | null {
+interface ShippedHarnessData {
+  rulesSubdir: string | null;
+  plugins: ReadonlySet<string> | null;
+}
+
+let _shippedHarnessData: ShippedHarnessData | null = null;
+
+export function harnessDataPath(): string {
+  return join(DATA_DIR, "harness.json");
+}
+
+function readShippedHarnessData(): ShippedHarnessData {
+  if (_shippedHarnessData !== null) return _shippedHarnessData;
   // tools/data/harness.json sits beside the compiled stage-graph.json in the
   // shipped tree (DATA_DIR). Absent in a dev checkout's core/ (authored source
-  // carries no compiled data) → null, and the caller falls through.
+  // carries no compiled data) → defaults, and the caller falls through.
+  const p = harnessDataPath();
   try {
-    const raw = readFileSync(join(DATA_DIR, "harness.json"), "utf-8");
-    const parsed = JSON.parse(raw) as { rulesSubdir?: unknown };
-    if (typeof parsed.rulesSubdir === "string" && parsed.rulesSubdir.length > 0) {
-      return parsed.rulesSubdir;
+    const raw = readFileSync(p, "utf-8");
+    const parsed = JSON.parse(raw) as { rulesSubdir?: unknown; plugins?: unknown };
+    let plugins: ReadonlySet<string> | null = null;
+    if (Object.prototype.hasOwnProperty.call(parsed, "plugins")) {
+      if (!Array.isArray(parsed.plugins)) {
+        throw new Error(`${p}: harness.json field "plugins" must be an array of non-empty strings.`);
+      }
+      const names: string[] = [];
+      for (const [idx, value] of parsed.plugins.entries()) {
+        if (typeof value !== "string" || value.trim().length === 0) {
+          throw new Error(`${p}: harness.json field "plugins" entry ${idx} must be a non-empty string.`);
+        }
+        names.push(value.trim());
+      }
+      plugins = new Set(names);
     }
-  } catch {
+    const rulesSubdir =
+      typeof parsed.rulesSubdir === "string" && parsed.rulesSubdir.length > 0
+        ? parsed.rulesSubdir
+        : null;
+    _shippedHarnessData = { rulesSubdir, plugins };
+    return _shippedHarnessData;
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith(`${p}:`)) throw err;
     // no harness.json (dev core/, or a tree built before this landed) → fall through
   }
-  return null;
+  _shippedHarnessData = { rulesSubdir: null, plugins: null };
+  return _shippedHarnessData;
+}
+
+function shippedRulesSubdir(): string | null {
+  try {
+    return readShippedHarnessData().rulesSubdir;
+  } catch (err) {
+    // rulesSubdir() has historically tolerated malformed/missing harness data.
+    // pluginsEnabled() is the strict reader for the selection field.
+    if (err instanceof Error && err.message.includes('field "plugins"')) return null;
+    throw err;
+  }
+}
+
+export function pluginsEnabled(): ReadonlySet<string> | null {
+  return readShippedHarnessData().plugins;
+}
+
+export function isPluginEnabled(plugin: string): boolean {
+  const selected = pluginsEnabled();
+  return selected === null || selected.has(plugin);
+}
+
+export function stageEnabledBySelection(stage: { plugin?: string; phase?: string }): boolean {
+  if (stage.phase === "initialization") return true;
+  return isPluginEnabled(stage.plugin ?? "aidlc");
+}
+
+export function _resetHarnessDataForTests(): void {
+  _shippedHarnessData = null;
 }
 
 export function rulesSubdir(): string {
@@ -2922,6 +2991,7 @@ export function latestStartedStageSlug(audit: string): string | null {
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "data");
 
 let _stageGraph: StageEntry[] | null = null;
+let _stageGraphAll: StageEntry[] | null = null;
 let _scopeMapping: Record<string, ScopeDefinition> | null = null;
 
 // Override paths for fixture injection in tests. Read at call time (not
@@ -2961,6 +3031,12 @@ export function scopesDir(): string {
 
 export function loadStageGraph(): StageEntry[] {
   if (_stageGraph !== null) return _stageGraph;
+  _stageGraph = loadStageGraphAll().filter((s) => s.enabled !== false);
+  return _stageGraph;
+}
+
+export function loadStageGraphAll(): StageEntry[] {
+  if (_stageGraphAll !== null) return _stageGraphAll;
   const p = stageGraphPath();
   let raw: string;
   try {
@@ -2984,23 +3060,29 @@ export function loadStageGraph(): StageEntry[] {
       `Stage graph at ${p} is not valid JSON: ${errorMessage(err)}`
     );
   }
-  _stageGraph = parsed;
+  _stageGraphAll = parsed;
   return parsed;
 }
 
-// Per-scope prose metadata read from each .claude/scopes/aidlc-<name>.md
-// frontmatter: name/depth/keywords/description (+ optional testStrategy).
+// Per-scope prose metadata read from each .claude/scopes/*.md frontmatter:
+// name/depth/keywords/description (+ optional testStrategy). Core scopes use
+// aidlc-<name>.md; plugin scopes use <plugin>-<name>.md, with the frontmatter
+// name matching the filename stem.
 // This is the depth/keywords/description half of a ScopeDefinition; the
 // EXECUTE/SKIP `.stages` half comes from the compiled grid. Cached.
 interface ScopeMetadata {
   name: string;
+  plugin?: string;
   depth: string;
   description: string;
   keywords: string[];
   testStrategy?: string;
+  runner?: boolean;
+  skeleton: boolean;
 }
 
 let _scopeMetadata: Record<string, ScopeMetadata> | null = null;
+let _scopeMetadataAll: Record<string, ScopeMetadata> | null = null;
 
 type ScopeGridForMapping = Record<string, { stages: Record<string, "EXECUTE" | "SKIP"> }>;
 
@@ -3029,10 +3111,11 @@ function loadScopeGridForMapping(): ScopeGridForMapping {
   }
 }
 
-export function loadScopeMetadata(): Record<string, ScopeMetadata> {
-  if (_scopeMetadata !== null) return _scopeMetadata;
+export function loadScopeMetadataAll(): Record<string, ScopeMetadata> {
+  if (_scopeMetadataAll !== null) return _scopeMetadataAll;
   const dir = scopesDir();
   const out: Record<string, ScopeMetadata> = {};
+  const nameToFile = new Map<string, string>();
   let files: string[];
   try {
     // Sort so readdirSync order is platform-independent — the derived
@@ -3043,21 +3126,70 @@ export function loadScopeMetadata(): Record<string, ScopeMetadata> {
     files = [];
   }
   for (const f of files) {
-    const body = readFileSync(join(dir, f), "utf-8");
-    const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    if (!m) throw new Error(`Scope file missing frontmatter: ${join(dir, f)}`);
-    const fm = m[1];
+    const filePath = join(dir, f);
+    const body = readFileSync(filePath, "utf-8");
+    const fm = frontmatterBlock(body);
+    if (fm === null) throw new Error(`Scope file missing frontmatter: ${filePath}`);
     const name = scalarField(fm, "name");
-    if (!name) throw new Error(`Scope file ${join(dir, f)} missing required frontmatter: name`);
+    if (!name) throw new Error(`Scope file ${filePath} missing required frontmatter: name`);
+    const previousFile = nameToFile.get(name);
+    if (previousFile) {
+      throw new Error(
+        `Duplicate scope name "${name}" in ${filePath}: already declared in ${previousFile}. Rename one of them.`
+      );
+    }
+    nameToFile.set(name, filePath);
     const meta: ScopeMetadata = {
       name,
       depth: scalarField(fm, "depth"),
       description: scalarField(fm, "description"),
       keywords: listField(fm, "keywords"),
+      skeleton: false,
     };
+    const plugin = scalarField(fm, "plugin");
+    if (plugin) {
+      // `aidlc-` is core's namespace: scope-runner dirs are `aidlc-<name>` for
+      // core scopes but the bare name for plugin scopes, so an aidlc--prefixed
+      // plugin would land its runner on a core path and silently clobber it
+      // (same invariant compile enforces for stage frontmatter).
+      if (plugin.startsWith("aidlc-")) {
+        throw new Error(
+          `Scope file ${filePath} declares plugin "${plugin}"; the "aidlc-" prefix is reserved for core (it collides with core runner paths). Rename the plugin.`
+        );
+      }
+      meta.plugin = plugin;
+    }
     const ts = scalarField(fm, "testStrategy");
     if (ts) meta.testStrategy = ts;
+    const runner = scalarField(fm, "runner");
+    if (runner === "true" || runner === "false") meta.runner = runner === "true";
+    const skeleton = scalarField(fm, "skeleton");
+    if (skeleton) {
+      if (skeleton !== "on" && skeleton !== "off") {
+        throw new Error(
+          `Scope file ${filePath} has invalid skeleton value "${skeleton}". Expected "on" or "off".`
+        );
+      }
+      meta.skeleton = skeleton === "on";
+    }
     out[name] = meta;
+  }
+  _scopeMetadataAll = out;
+  return out;
+}
+
+export function loadScopeMetadata(): Record<string, ScopeMetadata> {
+  if (_scopeMetadata !== null) return _scopeMetadata;
+  const all = loadScopeMetadataAll();
+  const selected = pluginsEnabled();
+  if (selected === null) {
+    _scopeMetadata = all;
+    return all;
+  }
+  const out: Record<string, ScopeMetadata> = {};
+  for (const [name, meta] of Object.entries(all)) {
+    const owner = meta.plugin ?? "aidlc";
+    if (selected.has(owner)) out[name] = meta;
   }
   _scopeMetadata = out;
   return out;
@@ -3113,6 +3245,9 @@ export function loadScopeMapping(): Record<string, ScopeDefinition> {
       description: meta.description,
     };
     if (meta.testStrategy !== undefined) def.testStrategy = meta.testStrategy;
+    if (meta.plugin !== undefined) def.plugin = meta.plugin;
+    if (meta.runner !== undefined) def.runner = meta.runner;
+    def.skeleton = meta.skeleton;
     out[name] = def;
   }
   _scopeMapping = out;
@@ -3125,19 +3260,22 @@ export function loadScopeMapping(): Record<string, ScopeDefinition> {
 export function _resetScopeMappingForTests(): void {
   _scopeMapping = null;
   _scopeMetadata = null;
+  _scopeMetadataAll = null;
   _validScopes = null;
 }
 
 export function _resetStageGraphForTests(): void {
   _stageGraph = null;
+  _stageGraphAll = null;
 }
 
 // Canonical scope names derived from .claude/scopes/*.md presence (via
-// loadScopeMapping's metadata source). Dropping a new aidlc-<name>.md file
-// automatically flows through every tool that validates scope arguments —
-// no code change. Sorted alphabetically so error-message enumeration is
-// deterministic regardless of file-read order. (Under the AIDLC_SCOPE_MAPPING
-// test seam the names come from the injected JSON keys instead.)
+// loadScopeMapping's metadata source). Dropping a new core aidlc-<name>.md file
+// or plugin <plugin>-<name>.md file automatically flows through every tool that
+// validates scope arguments — no code change. Sorted alphabetically so
+// error-message enumeration is deterministic regardless of file-read order.
+// (Under the AIDLC_SCOPE_MAPPING test seam the names come from the injected JSON
+// keys instead.)
 let _validScopes: ReadonlySet<string> | null = null;
 
 export function validScopes(): ReadonlySet<string> {
@@ -3145,6 +3283,49 @@ export function validScopes(): ReadonlySet<string> {
     _validScopes = new Set(Object.keys(loadScopeMapping()).sort());
   }
   return _validScopes;
+}
+
+export interface DefaultScopeResolution {
+  scope: string;
+  error?: string;
+  note?: string;
+}
+
+export function selectionAwareDefaultScope(preferred = "feature"): DefaultScopeResolution {
+  const scopes = [...validScopes()];
+  if (scopes.includes(preferred)) return { scope: preferred };
+
+  const mapping = loadScopeMapping();
+  const scopesByPlugin = new Map<string, string[]>();
+  for (const scope of scopes) {
+    const owner = mapping[scope]?.plugin ?? "aidlc";
+    const bucket = scopesByPlugin.get(owner) ?? [];
+    bucket.push(scope);
+    scopesByPlugin.set(owner, bucket);
+  }
+
+  const coreScopes = scopesByPlugin.get("aidlc") ?? [];
+  const pluginOwners = [...scopesByPlugin.keys()].filter((owner) => owner !== "aidlc").sort();
+
+  if (coreScopes.length === 0 && pluginOwners.length === 1) {
+    const only = [...(scopesByPlugin.get(pluginOwners[0]) ?? [])].sort();
+    if (only.length > 0) {
+      return {
+        scope: only[0],
+        note: `scope "${preferred}" is not an enabled scope; using "${only[0]}" (sole enabled plugin's first scope)`,
+      };
+    }
+  }
+
+  return {
+    scope: preferred,
+    error:
+      scopes.length === 0
+        ? `No default scope is available: core scope "${preferred}" is disabled or absent and no plugin scopes are enabled. Pass --scope explicitly.`
+        : coreScopes.length > 0
+          ? `No default scope is available: scope "${preferred}" is disabled or absent while core scopes are enabled. Pass --scope explicitly.`
+          : `No default scope is available: core scope "${preferred}" is disabled or absent and multiple plugin scope owners are enabled (${pluginOwners.join(", ")}). Pass --scope explicitly.`,
+  };
 }
 
 // Agent metadata derived from `.claude/agents/*.md` frontmatter. Adding a
@@ -3158,25 +3339,47 @@ export interface AgentMetadata {
   examples: string[];
 }
 
-const AGENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "agents");
+// .claude/agents/ holds one <slug>.md per persona. AIDLC_AGENTS_DIR env-var
+// seam mirrors AIDLC_SCOPES_DIR / AIDLC_SENSORS_DIR so fixture tests can point
+// the agent-metadata loader at an isolated tree. Evaluated at call time so
+// tests that set/unset mid-process see the change.
+export function agentsDir(): string {
+  return process.env.AIDLC_AGENTS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "..", "agents");
+}
 
 let _agents: AgentMetadata[] | null = null;
 
 export function loadAgents(): AgentMetadata[] {
   if (!_agents) {
-    const files = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));
-    _agents = files
-      .map((f) => parseAgentFrontmatter(join(AGENTS_DIR, f)))
-      .sort((a, b) => a.slug.localeCompare(b.slug));
+    const dir = agentsDir();
+    const slugToFile = new Map<string, string>();
+    const agents: AgentMetadata[] = [];
+    const files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+    for (const f of files) {
+      const filePath = join(dir, f);
+      const agent = parseAgentFrontmatter(filePath);
+      const previousFile = slugToFile.get(agent.slug);
+      if (previousFile) {
+        throw new Error(
+          `Duplicate agent slug "${agent.slug}" in ${filePath}: already declared in ${previousFile}. Rename one of them.`
+        );
+      }
+      slugToFile.set(agent.slug, filePath);
+      agents.push(agent);
+    }
+    _agents = agents.sort((a, b) => a.slug.localeCompare(b.slug));
   }
   return _agents;
 }
 
+export function _resetAgentsForTests(): void {
+  _agents = null;
+}
+
 function parseAgentFrontmatter(path: string): AgentMetadata {
   const body = readFileSync(path, "utf-8");
-  const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) throw new Error(`Agent file missing frontmatter: ${path}`);
-  const fm = m[1];
+  const fm = frontmatterBlock(body);
+  if (fm === null) throw new Error(`Agent file missing frontmatter: ${path}`);
 
   const slug = scalarField(fm, "name");
   const display_name = scalarField(fm, "display_name");
@@ -3191,6 +3394,11 @@ function parseAgentFrontmatter(path: string): AgentMetadata {
     );
   }
   return { slug, display_name, examples };
+}
+
+export function frontmatterBlock(body: string): string | null {
+  const m = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return m?.[1] ?? null;
 }
 
 // Scalar field parser. Rejects YAML folded/literal block markers
@@ -3613,6 +3821,9 @@ export function emitStageFrontmatter(obj: Record<string, unknown>): string {
 
   const FIELD_ORDER = [
     "slug",
+    "number",
+    "name",
+    "plugin",
     "phase",
     "execution",
     "condition",

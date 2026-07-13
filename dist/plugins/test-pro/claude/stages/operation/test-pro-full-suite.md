@@ -2,7 +2,7 @@
 slug: test-pro-full-suite
 number: 4.45
 name: Full Test Suite Execution
-bundle: test-pro
+plugin: test-pro
 phase: operation
 execution: CONDITIONAL
 condition: Execute under the enterprise scope when the regression suite is on this scope's resolved plan, after deployment.
@@ -14,9 +14,9 @@ produces:
   - test-pro-edge-api-report
 consumes:
   - artifact: deployment-log
-    required: true
+    required: false
   - artifact: test-pro-regression-suite
-    required: true
+    required: false
   - artifact: test-pro-integration-test-results
     required: false
 requires_stage:
@@ -27,6 +27,7 @@ sensors:
   - upstream-coverage
 scopes:
   - enterprise
+  - test-pro-validation
 when:
   producer-in-plan: test-pro-regression-suite
 inputs: Deployed environment coordinates, the construction regression suite, and integration results

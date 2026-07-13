@@ -20,10 +20,10 @@ export interface StageFrontmatter {
   // name — authored human-readable display name. Optional; shape-checked (string)
   // when present.
   name?: string;
-  // bundle — ownership identity (plugin mechanism, Layer 1). Optional; absent
+  // plugin — ownership identity (plugin mechanism, Layer 1). Optional; absent
   // means the item belongs to core. An open set (plugin names), so string-only —
   // no enum. Stored only when authored, so core stages stay byte-identical.
-  bundle?: string;
+  plugin?: string;
   phase: "initialization" | "ideation" | "inception" | "construction" | "operation";
   execution: "ALWAYS" | "CONDITIONAL";
   condition: string;
@@ -149,14 +149,14 @@ const REQUIRED_FIELDS = [
   "outputs",
 ] as const;
 
-const OPTIONAL_FIELDS = ["number", "name", "bundle", "for_each", "workspace_requires", "optional_produces", "produces_kinds", "sensors", "scopes", "reviewer", "reviewer_max_iterations", "when", "required_sections"] as const;
+const OPTIONAL_FIELDS = ["number", "name", "plugin", "for_each", "workspace_requires", "optional_produces", "produces_kinds", "sensors", "scopes", "reviewer", "reviewer_max_iterations", "when", "required_sections"] as const;
 
 const KNOWN_FIELDS = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS]);
 
 // Kebab-case: start with lowercase letter, followed by lowercase letters,
 // digits, or hyphens. Spec says "kebab-case; must match filename stem".
-// Filename-stem check is the parser's responsibility (where the filename
-// is known); here we only validate the shape.
+// compileStageGraph checks filename-stem equality where the filename is known;
+// here we only validate the shape.
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 
 // Stage display number: `<int>.<int>` (e.g. "0.1", "2.7", "4.50"). Shape only —
@@ -186,22 +186,31 @@ export function validateStageFrontmatter(
     return { valid: false, errors: [`expected object, got ${actual}`] };
   }
 
-  const o = obj;
+  const raw = obj;
   const errors: string[] = [];
 
   // Rule 2: reserved keys. Specific release error before generic unknown-key.
-  for (const key of Object.keys(o)) {
+  for (const key of Object.keys(raw)) {
     if (key in RESERVED_KEYS) {
       errors.push(`${key} is reserved (${RESERVED_KEYS[key]}); not active yet`);
     }
   }
 
   // Rule 3: unknown keys (not in REQUIRED_FIELDS ∪ OPTIONAL_FIELDS and not reserved).
-  for (const key of Object.keys(o)) {
+  // `bundle` gets a targeted error: it was the pre-rename ownership key, and the
+  // word stays deliberately unused (reserved for a possible future
+  // collection-of-plugins concept) — so name the fix instead of "unknown key".
+  for (const key of Object.keys(raw)) {
+    if (key === "bundle") {
+      errors.push('bundle: was renamed; write plugin: for ownership');
+      continue;
+    }
     if (!KNOWN_FIELDS.has(key) && !(key in RESERVED_KEYS)) {
       errors.push(`unknown key: ${key}`);
     }
   }
+
+  const o: Record<string, unknown> = { ...raw };
 
   // Rule 4: required fields present.
   for (const field of REQUIRED_FIELDS) {
@@ -214,13 +223,13 @@ export function validateStageFrontmatter(
   checkString(o, "slug", errors);
   checkSlugPattern(o, "slug", SLUG_RE, "kebab-case", errors);
 
-  // number / name / bundle — optional plugin-mechanism display + ownership
+  // number / name / plugin — optional plugin-mechanism display + ownership
   // metadata. Absent is valid (core stages omit them); shape-checked when
-  // present. number must be `<int>.<int>`; name + bundle any non-empty string.
+  // present. number must be `<int>.<int>`; name + plugin any non-empty string.
   checkString(o, "number", errors);
   checkSlugPattern(o, "number", NUMBER_RE, "<phase-prefix>.<index>", errors);
   checkString(o, "name", errors);
-  checkString(o, "bundle", errors);
+  checkString(o, "plugin", errors);
 
   checkString(o, "phase", errors);
   checkEnum(o, "phase", VALID_PHASES, errors);
@@ -507,10 +516,10 @@ export function validateStageFrontmatter(
     return { valid: false, errors };
   }
 
-  // On success, return the same reference — no copy, no normalisation.
-  // Callers must NOT mutate `data`; it aliases the input object. The
-  // double-cast (unknown → StageFrontmatter) is the documented trust
-  // boundary: rules 1–9 above have already verified each field's shape
+  // On success, return the normalized clone; deprecated aliases are not exposed
+  // past the schema boundary. Callers must NOT mutate `data`; it is treated as
+  // immutable by convention. The double-cast (unknown → StageFrontmatter) is the
+  // documented trust boundary: rules 1–9 above have already verified each field's shape
   // (presence, type, enum, regex), so the structural compatibility is
   // guaranteed at runtime even though TS can't follow the per-field
   // checks. Centralising this single cast in the validator keeps the

@@ -34,12 +34,14 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { seedCustomHarness } from "./custom-harness.ts";
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
+const requireHere = createRequire(import.meta.url);
 export const REPO_ROOT = join(HARNESS_DIR, "..", "..");
 export const AIDLC_SRC = join(REPO_ROOT, "dist", "claude", ".claude");
 
@@ -79,6 +81,45 @@ export const AIDLC_MEMORY_SRC = join(REPO_ROOT, "dist", "claude", "aidlc");
 export const FIXTURES_DIR = join(REPO_ROOT, "tests", "fixtures");
 
 const RETRYABLE_RM_CODES = new Set(["EBUSY", "ENOTEMPTY", "EPERM"]);
+
+function resetSelectionSensitiveCaches(): void {
+  // fixtures.ts is imported by sandbox tests that copy no core/ tree, so core/
+  // cannot be a module-load-time dependency.
+  const graph = requireHere(
+    "../../core/tools/aidlc-graph.ts",
+  ) as typeof import("../../core/tools/aidlc-graph.ts");
+  const lib = requireHere(
+    "../../core/tools/aidlc-lib.ts",
+  ) as typeof import("../../core/tools/aidlc-lib.ts");
+
+  graph.__resetGraphCache();
+  lib._resetStageGraphForTests();
+  lib._resetScopeMappingForTests();
+  lib._resetAgentsForTests();
+  lib._resetHarnessDataForTests();
+}
+
+export function withEnvAndFreshCaches<T>(
+  env: Record<string, string | undefined>,
+  fn: () => T,
+): T {
+  const prior = new Map<string, string | undefined>();
+  for (const key of Object.keys(env)) prior.set(key, process.env[key]);
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  resetSelectionSensitiveCaches();
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of prior) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    resetSelectionSensitiveCaches();
+  }
+}
 
 /**
  * Unset AIDLC-related env vars that a developer's shell (or a prior test) may

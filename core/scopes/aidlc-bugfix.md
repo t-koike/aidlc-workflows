@@ -6,6 +6,8 @@ keywords:
   - bug
   - broken
 description: Fix a specific bug
+skeleton: off
+runner: true
 ---
 
 # bugfix scope

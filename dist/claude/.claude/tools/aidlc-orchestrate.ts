@@ -94,6 +94,7 @@ import {
   intentRepos,
   isPerUnitStage,
   listIntents,
+  loadScopeMetadata,
   loadScopeMapping,
   nextInScopeStage,
   parseBoltDag,
@@ -110,6 +111,7 @@ import {
   resolveProjectDir,
   runtimeGraphPath,
   scopeCostSummary,
+  selectionAwareDefaultScope,
   type StageEntry,
   stateFilePath,
   unitDependencyPath,
@@ -542,7 +544,7 @@ function intentPickPromptIfRecordsExist(
 function resolveScope(
   stateContent: string | null,
   flags: ParsedFlags,
-): { scope: string; source: "state" | "flag" | "env" | "default" } {
+): { scope: string; source: "state" | "flag" | "env" | "default"; error?: string } {
   const stateScope = stateContent ? getField(stateContent, "Scope") : null;
   if (stateScope && stateScope.length > 0) {
     return { scope: stateScope, source: "state" };
@@ -550,11 +552,19 @@ function resolveScope(
   if (flags.scope && flags.scope.length > 0) {
     return { scope: flags.scope, source: "flag" };
   }
-  const envScope = process.env.AWS_AIDLC_DEFAULT_SCOPE;
-  if (envScope && envScope.length > 0) {
-    return { scope: envScope, source: "env" };
+  const envScope = (process.env.AWS_AIDLC_DEFAULT_SCOPE || "").trim();
+  if (envScope.length > 0) {
+    if (validScopes().has(envScope)) return { scope: envScope, source: "env" };
+    const fallback = selectionAwareDefaultScope(envScope);
+    if (!fallback.error && fallback.note) {
+      process.stderr.write(
+        `AWS_AIDLC_DEFAULT_SCOPE="${envScope}" is not an enabled scope; using ${fallback.scope} (sole enabled plugin's first scope)\n`,
+      );
+    }
+    return { scope: fallback.scope, source: "env", error: fallback.error };
   }
-  return { scope: DEFAULT_SCOPE, source: "default" };
+  const fallback = selectionAwareDefaultScope(DEFAULT_SCOPE);
+  return { scope: fallback.scope, source: "default", error: fallback.error };
 }
 
 // Derive the memory diary path for a stage (SKILL.md: every stage keeps a
@@ -664,23 +674,6 @@ const VALID_SKELETON_STANCES: ReadonlySet<string> = new Set([
   "on",
   "off",
   "scope-dependent",
-]);
-
-// The scope-mapping fallback the "scope-dependent" stance resolves through
-// (SKILL.md:686-692, verbatim): skeleton-on for greenfield-shaped scopes,
-// skeleton-off for incremental-work scopes. `infra` is greenfield-shaped, so it
-// is skeleton-on — and it DOES reach the skeleton gate: its first in-scope
-// construction stage is `nfr-requirements` (code-generation is SKIP for infra,
-// but nfr-requirements EXECUTEs and is what isSkeletonGateStage matches), so an
-// `infra` Construction workflow emits gate:"unresolved" at nfr-requirements and
-// resolves through this set like any other greenfield scope.
-const SKELETON_ON_SCOPES: ReadonlySet<string> = new Set([
-  "enterprise",
-  "mvp",
-  "feature",
-  "poc",
-  "workshop",
-  "infra",
 ]);
 
 // Read the recorded skeleton stance from state, or null if the round-trip has
@@ -864,6 +857,14 @@ function isSkeletonGateStage(node: GraphStage, scope: string): boolean {
   return first !== null && first.slug === node.slug;
 }
 
+function scopeDefaultSkeletonStance(scope: string): SkeletonStance {
+  try {
+    return loadScopeMetadata()[scope]?.skeleton === true ? "on" : "off";
+  } catch {
+    return "off";
+  }
+}
+
 // Resolve the determined boolean gate for the skeleton-gate stage once the
 // conductor's classified stance is in hand. The round-trip's whole point is to
 // turn "unresolved" into a DETERMINED boolean; this function is that resolution.
@@ -901,12 +902,11 @@ function resolveSkeletonGate(stance: SkeletonStance, scope: string): boolean {
       // Bolt 1 (autonomy is gated until the post-Bolt-1 ladder sets it).
       return true;
     case "scope-dependent": {
-      // Fall back to the scope-mapping defaults to SELECT the ceremony
-      // (greenfield → skeleton-on, incremental → skeleton-off); either ceremony
-      // presents a gate at Bolt 1, so the determined gate is true regardless.
-      const _ceremony: SkeletonStance = SKELETON_ON_SCOPES.has(scope)
-        ? "on"
-        : "off";
+      // Fall back to the active scope's metadata to SELECT the ceremony.
+      // Missing metadata is skeleton-off; composed/runtime-approved scopes
+      // reshape an existing plan and must opt in explicitly to conjure a
+      // walking-skeleton Bolt.
+      const _ceremony = scopeDefaultSkeletonStance(scope);
       return resolveSkeletonGate(_ceremony, scope);
     }
   }
@@ -1452,7 +1452,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
   // scope-confirm `ask` first. No `--init`/`--force` flag reaches the engine.)
 
   // Resolve scope by the precedence ladder before any graph lookup.
-  const { scope, source } = resolveScope(stateContent, flags);
+  const { scope, source, error: scopeResolutionError } = resolveScope(stateContent, flags);
 
   // Branch 3b — UNCONDITIONAL --scope validation. An explicit `--scope` flag is
   // validated even when state supplies a valid scope that wins the precedence
@@ -1485,6 +1485,11 @@ function handleNext(args: string[], projectDir: string | undefined): void {
       emit(errorDirective(toolErrorMessage(run)));
       return;
     }
+  }
+
+  if (source === "default" && scopeResolutionError) {
+    emit(errorDirective(scopeResolutionError));
+    return;
   }
 
   // An unresolvable (unknown) scope is a hard error — the engine cannot derive
@@ -1732,9 +1737,10 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     const bf = scopeCostSummary("bugfix");
     const poc = scopeCostSummary("poc");
     const feat = scopeCostSummary("feature");
+    const fallbackExamples = [...validScopes()].slice(0, 3).join(", ") || "an explicit scope";
     const examples = bf && poc && feat
       ? `bugfix = ${bf.execute} of ${bf.total} stages, poc = ${poc.execute}, feature = all ${feat.execute}`
-      : "bugfix, feature, poc";
+      : fallbackExamples;
     emit(askDirective(
       `No stock scope clearly fits: "${flags.intent}". ` +
         "I can compose a tailored plan for this task (recommended: reply \"compose\"), " +

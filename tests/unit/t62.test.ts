@@ -265,11 +265,28 @@ describe("t62 stage-schema — validateStageFrontmatter (migrated from t62-stage
     );
   });
 
-  // number / name / bundle — optional plugin-mechanism metadata, accepted when
+  // number / name / plugin — optional plugin-mechanism metadata, accepted when
   // shape-valid (previously rejected as unknown keys).
-  test("number/name/bundle: valid values pass", () => {
-    const r = validateStageFrontmatter({ ...fixture(), number: "4.50", name: "My Stage", bundle: "test-pro" });
+  test("number/name/plugin: valid values pass", () => {
+    const r = validateStageFrontmatter({ ...fixture(), number: "4.50", name: "My Stage", plugin: "test-pro" });
     expect(r.valid).toBe(true);
+    if (!r.valid) return;
+    expect((r.data as unknown as Record<string, unknown>).plugin).toBe("test-pro");
+  });
+
+  // The pre-rename ownership key is dead, not aliased. It gets a targeted
+  // error naming the fix (not a generic "unknown key"), whether it appears
+  // alone or beside the canonical key.
+  test("bundle: rejected with the rename named", () => {
+    expect(errs({ ...fixture(), bundle: "test-pro" })).toContain(
+      "bundle: was renamed; write plugin: for ownership",
+    );
+  });
+
+  test("bundle beside plugin: still rejected", () => {
+    expect(errs({ ...fixture(), plugin: "test-pro", bundle: "test-pro" })).toContain(
+      "bundle: was renamed; write plugin: for ownership",
+    );
   });
 
   test("number: wrong shape rejected", () => {

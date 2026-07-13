@@ -20,23 +20,23 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 435,
+    "total": 451,
     "enumeratedByClass": {
-      "function": 217,
-      "audit": 71,
+      "function": 230,
+      "audit": 72,
       "scope": 9,
       "stage": 32,
       "hook": 12,
-      "subcommand": 87,
+      "subcommand": 89,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 90,
-      "audit": 30,
+      "function": 94,
+      "audit": 31,
       "scope": 9,
       "stage": 8,
       "hook": 11,
-      "subcommand": 74,
+      "subcommand": 76,
       "render-surface": 7
     }
   },
@@ -264,6 +264,18 @@
       "coveredBy": [
         {
           "file": "tests/e2e/t113.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "audit",
+      "unitId": "PLUGIN_SELECTION_CHANGED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t224-plugin-selection.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -741,6 +753,20 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:_resetAgentsForTests",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:_resetHarnessDataForTests",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:_resetScopeMappingForTests",
       "minMechanism": "none",
       "coveredBy": [],
@@ -829,6 +855,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:agentsDir",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:anyIntentRecordExists",
       "minMechanism": "none",
       "coveredBy": [],
@@ -875,6 +908,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:artifactsRegistryFor",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -1097,6 +1137,10 @@
           "mechanism": "none"
         },
         {
+          "file": "tests/integration/t224-plugin-selection.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/integration/t66.test.ts",
           "mechanism": "cli"
         },
@@ -1106,6 +1150,14 @@
         },
         {
           "file": "tests/unit/t124-scope-transpose.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t222-plugin-runner-naming.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t223-naming-enforcement.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -1396,6 +1448,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:frontmatterBlock",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:getField",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1412,6 +1471,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:harnessDataPath",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -1610,6 +1676,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:isPluginEnabled",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:isValidRepoName",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1700,6 +1773,10 @@
           "mechanism": "none"
         },
         {
+          "file": "tests/unit/t223-naming-enforcement.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t61.test.ts",
           "mechanism": "cli"
         }
@@ -1769,9 +1846,24 @@
         {
           "file": "tests/unit/t125-scope-files.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t223-naming-enforcement.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t225-scope-name-decoupling.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:loadScopeMetadataAll",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "function",
@@ -1788,6 +1880,13 @@
     {
       "unitClass": "function",
       "unitId": "function:loadStageGraph",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:loadStageGraphAll",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -1829,8 +1928,13 @@
       "unitClass": "function",
       "unitId": "function:mergeComposedScopes",
       "minMechanism": "none",
-      "coveredBy": [],
-      "status": "UNCOVERED"
+      "coveredBy": [
+        {
+          "file": "tests/integration/t224-plugin-selection.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -1999,10 +2103,6 @@
       "minMechanism": "none",
       "coveredBy": [
         {
-          "file": "tests/integration/t32-stage-graph-consistency.test.ts",
-          "mechanism": "none"
-        },
-        {
           "file": "tests/integration/t38-stage-agent-cross-check.test.ts",
           "mechanism": "none"
         },
@@ -2075,6 +2175,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:pluginsEnabled",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t224-plugin-selection.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2476,6 +2588,25 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:selectionAwareDefaultScope",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t225-scope-name-decoupling.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:selectionDroppedOrderingEdges",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:sensorsDir",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2583,6 +2714,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:stageEnabledBySelection",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t225-scope-name-decoupling.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -4707,6 +4850,10 @@
           "mechanism": "cli"
         },
         {
+          "file": "tests/unit/t223-naming-enforcement.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t27.test.ts",
           "mechanism": "cli"
         },
@@ -4939,6 +5086,18 @@
     },
     {
       "unitClass": "subcommand",
+      "unitId": "aidlc-utility select-plugins",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t224-plugin-selection.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
       "unitId": "aidlc-utility set-status",
       "minMechanism": "cli",
       "coveredBy": [
@@ -4996,6 +5155,18 @@
         },
         {
           "file": "tests/integration/t175-space-create-memory-isolation.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-utility stage-table",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/integration/t32-stage-graph-consistency.test.ts",
           "mechanism": "cli"
         }
       ],

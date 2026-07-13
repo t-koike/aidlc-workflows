@@ -5,6 +5,8 @@ keywords:
   - mvp
   - minimum viable
 description: Skip operations, ship the core
+skeleton: on
+runner: true
 ---
 
 # mvp scope
