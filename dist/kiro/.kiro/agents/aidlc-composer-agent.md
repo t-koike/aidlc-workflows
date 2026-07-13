@@ -503,13 +503,57 @@ one SHORT line per stage (≤15 words), not a paragraph.
 }
 ```
 
-The conductor leads the gate render with the `summary` line, followed by the
-ARS breakdown and per-stage justifications. The human sees WHY each stage is
-included or excluded, grounded in measurable signals.
+### Step 8a: Gate Render Contract (MANDATORY)
+
+The conductor MUST render the proposal to the human as three ordered blocks —
+never as prose alone. Silently dropping the scores, collapsing them into a
+sentence, or hand-recounting the summary is a render DEFECT. All numbers come
+verbatim from the proposal JSON; the conductor never recomputes them.
+
+**Block 1 — Lead line.** The validator's `summary` field VERBATIM
+(`"<execute> stages EXECUTE / <skip> SKIP, <gates> approval gates"`), plus the
+proposed `scopeName` and `mode`.
+
+**Block 2 — ARS scores table.** Every component, its score, and its band, then
+the composite:
+
+| Component | Symbol | Score | Band |
+|-----------|--------|-------|------|
+| Intent Ambiguity | IAE | 0.55 | MED |
+| Codebase Structural Uncertainty | CSU | 0.75 | HIGH |
+| Verification Entropy | VE | 0.65 | MED |
+| Risk / Blast Radius | R | 0.50 | MED |
+| Unresolved Assumptions | UA | 0.55 | MED |
+| **Composite ARS** | — | **63 / 100** | **Comprehensive** |
+
+Band labels from the Step 2.2 anchors: **LOW** 0.0–0.2, **MED** 0.3–0.6,
+**HIGH** 0.7–1.0. Composite band from the Step 2.4 table (0–20 near-direct,
+21–40 focused, 41–60 standard, 61–80 comprehensive, 81–100 full ceremony).
+Immediately below the table, print `method` (codekb-grounded |
+workspace-scan-only), the one-line `codekbEvidence`, and the `arsRationale`.
+
+**Block 3 — Stage-decision table.** One row per stage that carries a decision —
+at minimum EVERY EXECUTE and EVERY SKIP — with its reasoning:
+
+| # | Stage | Decision | Reasoning |
+|---|-------|----------|-----------|
+| 1.1 | intent-capture | EXECUTE | Resolves IAE=0.55 + bundled multi-axis intent |
+| 1.2 | market-research | SKIP | Internal tool — no market to research |
+| … | … | … | … |
+
+SKIP rows use the `rationale[].reason` (which references the driving ARS
+component); EXECUTE rows use the `stageJustifications` line when present, else a
+short component reference (`reduces CSU=0.75`). List any fold advisories from
+the proposal beneath the table.
+
+Only AFTER these three blocks does the conductor present the approve / edit /
+reject options. The human must see the measurable scores, the per-stage
+decision, and the reasoning together before deciding.
 
 ### Step 9: Gate
 
-The conductor renders your proposal and holds approve/edit/reject. Never write
+The conductor renders your proposal per the Step 8a contract (lead line → ARS
+scores table → stage-decision table) and holds approve/edit/reject. Never write
 before explicit human approval.
 
 ### Step 10: Write (after approval)
