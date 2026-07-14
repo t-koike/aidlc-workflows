@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.14] - 2026-07-14
+
+The user guide, harness guides, generated onboarding, and `/aidlc --help` now agree with the implemented command, harness, agent, and audit surfaces. Kiro IDE instructions also distinguish its skill-based conductor from Kiro CLI's agent-v1 defaults. **Upgrade:** re-copy your `dist/<harness>/` shell to refresh the corrected onboarding and help text.
+
+* `/aidlc --help` now lists only commands routed by `/aidlc`; the direct-only `aidlc-utility.ts codekb-path` helper is documented separately.
+* Kiro CLI is covered throughout the harness roster, and Kiro IDE setup no longer claims that CLI-only `settings/cli.json` selects an IDE default agent.
+* Agent documentation distinguishes the 14-agent roster (11 domain agents, two reviewers, and the composer), and the audit taxonomy is synchronized with its 72-event registry.
+* Documentation parity tests now derive command, harness, agent, and event-count claims from authored implementation surfaces to prevent recurrence.
+## [2.3.13] - 2026-07-14
+
+Codex hook-trust entries are now generated with a standards-compliant TOML serializer, including paths with spaces, quotes, and backslashes on Unix and Windows. **Upgrade:** re-copy `dist/codex/` and regenerate the entries you append to `$CODEX_HOME/config.toml`.
+
+* `bun scripts/package.ts codex trust --project <abs-dir> [--hooks-json <abs-path>]` preserves both native Unix and Windows paths while emitting parseable TOML.
+* The trust command now rejects relative paths, missing values, duplicate flags, and unknown arguments instead of printing unusable trust keys.
+## [2.3.12] - 2026-07-14
+
+The multi-harness packager now treats each `dist/<harness>/` directory as one generated root, closing drift gaps for project-root onboarding, configuration, and removed outputs. **Upgrade:** re-copy your `dist/<harness>/` shell into the project after regenerating it with this version.
+
+* Graph compilation and runner generation now receive the manifest's actual `harnessDir`, including custom harness directories.
+* An explicitly named harness without a manifest exits nonzero instead of being silently skipped.
+* `bun scripts/package.ts --check` now detects modified, removed, and renamed project-root outputs, including Kiro `AGENTS.md`, `.mcp.json`, and `.gitignore`.
+* Emitters write into the packager-provided distribution root; check mode builds that root in a temporary directory and applies the same complete-tree drift scan.
 ## [2.3.10] - 2026-07-14
 
 The linter sensor now pins the eslint version it runs (`eslint@10`) instead of resolving whatever `eslint` bunx finds first. A bare `bunx eslint` prefers a project-local node_modules copy, then any `eslint` on PATH, before fetching from the registry - and distro packages ship ancient versions (Ubuntu's apt eslint is 6.4.0, installed as a transitive dependency of `apt install npm`). Pre-flat-config eslint cannot read `eslint.config.js`, so on such a box every linter fire silently degraded to a `Note=tool-unavailable` PASS, masking real lint findings. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.

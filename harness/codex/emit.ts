@@ -17,8 +17,9 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
-import type { EmitContext, EmitResult } from "../../scripts/manifest-types.ts";
+import { dirname, join, posix, relative, win32 } from "node:path";
+import { stringify } from "smol-toml";
+import type { EmitContext } from "../../scripts/manifest-types.ts";
 import { renderOnboarding } from "../../scripts/onboarding.ts";
 import onboardingFills from "./onboarding.fills.ts";
 import { projectTier } from "../../core/tools/aidlc-tiers.ts";
@@ -179,28 +180,32 @@ const SNAKE: Record<string, string> = {
 // Exported so the `trust` subcommand (aidlc-codex-trust.ts) can print
 // installer-substituted entries.
 export function trustEntries(projectDir: string, hooksJsonPath?: string): string {
-  const path = hooksJsonPath ?? `${projectDir}/.codex/hooks.json`;
+  // A supplied hooks path is already the Codex trust identity: preserve it
+  // exactly. For the default, choose the path implementation from the project
+  // spelling so Windows installers can generate native paths even when this
+  // packager is invoked from Unix (and vice versa).
+  const projectPath =
+    win32.isAbsolute(projectDir) && !posix.isAbsolute(projectDir) ? win32 : posix;
+  const path = hooksJsonPath ?? projectPath.join(projectDir, ".codex", "hooks.json");
   const counters: Record<string, number> = {};
-  const lines: string[] = [];
+  const state: Record<string, { trusted_hash: string }> = {};
   for (const { event, target } of HOOK_WIRING) {
     const snake = SNAKE[event];
     const idx = counters[snake] ?? 0;
     counters[snake] = idx + 1;
     const hash = trustHash(snake, ADAPTER_CMD(target));
-    lines.push(`[hooks.state."${path}:${snake}:${idx}:0"]`);
-    lines.push(`trusted_hash = "${hash}"`);
-    lines.push("");
+    state[`${path}:${snake}:${idx}:0`] = { trusted_hash: hash };
   }
-  return lines.join("\n");
+  return stringify({ hooks: { state } });
 }
 
 function emitTrustSeed(): string {
   return (
     `# dist/codex hook-trust pre-seed (S9a) — TEMPLATE.\n` +
-    `# Append these entries to the USER config.toml ($CODEX_HOME/config.toml)\n` +
-    `# after replacing <PROJECT_DIR> with the project's absolute path, or run:\n` +
-    `#   bun scripts/package.ts codex trust --project <abs-dir>\n` +
-    `# to print them substituted and ready to paste. The hash covers the\n` +
+    `# Generate ready-to-paste entries with the TOML serializer:\n` +
+    `#   bun scripts/package.ts codex trust --project <abs-dir> [--hooks-json <abs-path>]\n` +
+    `# Append the command's complete stdout to the USER config.toml\n` +
+    `# ($CODEX_HOME/config.toml). The hash covers the\n` +
     `# normalized hook identity (event + command + defaults), NOT the path —\n` +
     `# only the key changes per install. Codex then runs the hooks without a\n` +
     `# TUI trust pass (the --dangerously-bypass-hook-trust flag does NOT fire\n` +
@@ -244,9 +249,9 @@ function tomlMultiline(s: string): string {
 
 // ---------------------------------------------------------------------------
 // emit() — the manifest entry point. Assembles every codex-only emission as a
-// {path, content} list, then writes (or, under check, returns the diff).
+// {path, content} list, then writes it into the packager-provided dist root.
 // ---------------------------------------------------------------------------
-export default function emit(ctx: EmitContext): EmitResult {
+export default function emit(ctx: EmitContext): void {
   // tierCap is the packager's resolved pack-time cap, passed through so the
   // emit-owned TOML projections use the SAME cap as every declarative
   // projection - never re-resolved here.
@@ -389,24 +394,12 @@ export default function emit(ctx: EmitContext): EmitResult {
     emissions.push({ path: join(SKILLS_DST, skill, "agents", "openai.yaml"), content: () => IMPLICIT_GUARD });
   }
 
-  // --- write or check --------------------------------------------------------
-  const written: string[] = [];
-  const problems: string[] = [];
-  if (ctx.check) {
-    for (const { path, content } of emissions) {
-      const want = content();
-      if (!existsSync(path)) problems.push(`MISSING emission: ${relative(distRoot, path)}`);
-      else if (readFileSync(path, "utf-8") !== want) problems.push(`DIFFERS emission: ${relative(distRoot, path)}`);
-      written.push(path);
-    }
-  } else {
-    // Clean-sweep the emitted skills tree so a removed runner doesn't linger.
-    rmSync(SKILLS_DST, { recursive: true, force: true });
-    for (const { path, content } of emissions) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, content(), "utf-8");
-      written.push(path);
-    }
+  // Clean-sweep the emitted skills tree so a removed runner doesn't linger.
+  // In --check mode distRoot is temporary; the packager compares its complete
+  // inventory with the committed distribution after emit returns.
+  rmSync(SKILLS_DST, { recursive: true, force: true });
+  for (const { path, content } of emissions) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content(), "utf-8");
   }
-  return { written, problems };
 }

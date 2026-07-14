@@ -1,4 +1,4 @@
-# Question Rendering — Kiro CLI harness annex
+# Question Rendering — Kiro IDE harness annex
 
 This file defines how THIS harness renders the structured questions that
 `aidlc-common/protocols/stage-protocol.md` § "Structured questions" requires.

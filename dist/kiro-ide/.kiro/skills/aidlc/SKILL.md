@@ -11,7 +11,7 @@ description: >
   Or describe what you want to build and the scope will be auto-detected.
 ---
 
-# AI-DLC Orchestrator (Kiro CLI harness)
+# AI-DLC Orchestrator (Kiro IDE harness)
 
 ## Welcome
 
