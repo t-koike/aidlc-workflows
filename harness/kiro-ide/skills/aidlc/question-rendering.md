@@ -8,7 +8,7 @@ is the one place that binds that contract to a concrete mechanism.
 
 ## Mechanism
 
-Kiro CLI has no structured-question tool, so every structured question renders
+Kiro IDE has no structured-question tool, so every structured question renders
 as **numbered prose options in chat**, and the user answers with a number (or
 free text). Render the spec like this:
 

@@ -629,12 +629,31 @@ describe("t221 (c) harness registration and protocol prose", () => {
     expect(body).toMatch(/Read verdict.*delete `<record>\/\.aidlc-reviewer-dispatch\.json`/s);
   });
 
-  test("every harness SKILL.md reviewer bullet carries the dispatch-record instruction", () => {
-    for (const harness of HARNESS_MATRIX) {
+  test("harnesses with reviewer-scope enforcement carry the dispatch-record instruction", () => {
+    for (const harness of HARNESS_MATRIX.filter(
+      (candidate) => candidate.capabilities.reviewerScopeRegistration !== "unsupported",
+    )) {
       const body = readFileSync(join(harness.authoredRoot, "skills", "aidlc", "SKILL.md"), "utf-8");
       const labelled = `harness ${harness.name}: ${body}`;
       expect(labelled).toContain(".aidlc-reviewer-dispatch.json");
       expect(labelled).toContain("Delete the dispatch record");
+    }
+  });
+
+  test("Kiro IDE documents its prose-only reviewer bound and omits the unused record", () => {
+    const harnesses = HARNESS_MATRIX.filter(
+      (harness) => harness.capabilities.reviewerScopeRegistration === "unsupported",
+    );
+    expect(harnesses.length).toBeGreaterThan(0);
+    for (const harness of harnesses) {
+      const body = readFileSync(
+        join(harness.authoredRoot, "skills", "aidlc", "SKILL.md"),
+        "utf-8",
+      );
+      expect(body).toContain("read-scope bound is prose-only on this harness");
+      expect(body).toContain("no IDE reviewer-scope hook consumes that record");
+      expect(body).not.toContain(".aidlc-reviewer-dispatch.json");
+      expect(body).not.toContain("reviewer-scope PreToolUse hook enforces");
     }
   });
 });

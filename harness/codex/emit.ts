@@ -185,7 +185,10 @@ export function trustEntries(projectDir: string, hooksJsonPath?: string): string
   // spelling so Windows installers can generate native paths even when this
   // packager is invoked from Unix (and vice versa).
   const projectPath =
-    win32.isAbsolute(projectDir) && !posix.isAbsolute(projectDir) ? win32 : posix;
+    win32.isAbsolute(projectDir) &&
+    (!posix.isAbsolute(projectDir) || projectDir.startsWith("//"))
+      ? win32
+      : posix;
   const path = hooksJsonPath ?? projectPath.join(projectDir, ".codex", "hooks.json");
   const counters: Record<string, number> = {};
   const state: Record<string, { trusted_hash: string }> = {};

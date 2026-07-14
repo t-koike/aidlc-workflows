@@ -203,6 +203,52 @@ describe("documentation parity derives current behavior from authored implementa
     }
   });
 
+  test("Kiro IDE documentation names only IDE-native enforcement and configuration surfaces", () => {
+    const skill = read("harness", "kiro-ide", "skills", "aidlc", "SKILL.md");
+    const questionRendering = read(
+      "harness",
+      "kiro-ide",
+      "skills",
+      "aidlc",
+      "question-rendering.md",
+    );
+    const ideHooks = at("harness", "kiro-ide", "hooks");
+
+    expect(existsSync(join(ideHooks, "aidlc-reviewer-scope.kiro.hook"))).toBe(false);
+    expect(skill).toContain("read-scope bound is prose-only on this harness");
+    expect(skill).not.toContain(".aidlc-reviewer-dispatch.json");
+    expect(skill).not.toContain("kiro-cli");
+    expect(questionRendering).toContain("Kiro IDE has no structured-question tool");
+    expect(questionRendering).not.toContain("Kiro CLI");
+
+    const primitiveMap = sliceBetween(
+      read("docs", "reference", "14-claude-features.md"),
+      "| AI-DLC Concept |",
+      "\n\nThe deterministic engine",
+    );
+    const rows = primitiveMap
+      .split("\n")
+      .filter((line) => line.startsWith("| **"))
+      .map((line) =>
+        line
+          .split("|")
+          .slice(1, -1)
+          .map((cell) => cell.trim()),
+      );
+    const ideCell = (label: string): string => {
+      const row = rows.find((candidate) => candidate[0].startsWith(`**${label}**`));
+      if (!row) throw new Error(`missing primitive-map row: ${label}`);
+      return row[3];
+    };
+
+    expect(ideCell("Agent personas")).toContain("`tools:` grants");
+    expect(ideCell("Agent personas")).not.toContain("agent configs");
+    expect(ideCell("Standing rules")).toContain("`rules_in_context`");
+    expect(ideCell("Standing rules")).not.toContain("resources glob");
+    expect(ideCell("Permissions / config")).toContain("`tools:` frontmatter");
+    expect(ideCell("Permissions / config")).not.toContain("settings/cli.json");
+  });
+
   test("documented agent roster matches agent files and reviewer frontmatter", () => {
     expect(agentNames.length).toBe(14);
     expect(domainNames.length).toBe(11);
@@ -261,6 +307,48 @@ describe("documentation parity derives current behavior from authored implementa
     );
     const diagram = sliceBetween(diagramSection, "```mermaid", "```");
     expect(agentTokens(diagram)).toEqual(domainNames);
+  });
+
+  test("agent tool matrices describe expected use rather than access grants", () => {
+    for (const name of agentNames) {
+      const source = read("core", "agents", `${name}.md`);
+      const frontmatter = sliceBetween(source, "---\n", "\n---");
+      expect(frontmatter, `${name} must inherit the session toolset`).not.toMatch(/^tools:/m);
+    }
+
+    const index = read("docs", "reference", "agents", "README.md");
+    const expectedTools = sliceBetween(
+      index,
+      "### Tools each persona is expected to exercise",
+      "### Agent Tiers",
+    );
+    const comparison = sliceBetween(
+      index,
+      "## Agent Comparison Matrix",
+      "## Phase Participation",
+    );
+    const agentSystem = sliceBetween(
+      read("docs", "reference", "05-agent-system.md"),
+      "## Agent Comparison Matrix",
+      "## Phase Participation",
+    );
+    const hookTools = sliceBetween(
+      read("docs", "reference", "06-hooks-and-tools.md"),
+      "### Agent Tool Restrictions",
+      "## Deterministic Utility Tool",
+    );
+
+    expect(index).toContain("every agent inherits the **full session toolset**");
+    expect(expectedTools).toContain("not a per-agent grant");
+    expect(comparison).toContain("Bash Expected Use");
+    expect(comparison).toContain("WebSearch Expected Use");
+    expect(comparison).toContain("does not grant or withhold access");
+    expect(agentSystem).toContain("Bash Expected Use");
+    expect(agentSystem).toContain("WebSearch Expected Use");
+    expect(hookTools).toContain("Agents Expected to Exercise It");
+    expect(`${expectedTools}\n${comparison}\n${agentSystem}\n${hookTools}`).not.toMatch(
+      /\b(?:Bash|WebSearch) access\b/i,
+    );
   });
 
   test("engine docs match the subcommands in aidlc-orchestrate main", () => {
