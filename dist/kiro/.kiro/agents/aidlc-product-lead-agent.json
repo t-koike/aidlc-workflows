@@ -4,13 +4,37 @@
   "description": "AI-DLC Product Lead Reviewer — delegation target for reviewing requirements, user stories, and mockups.",
   "prompt": "file://aidlc-product-lead-agent.md",
   "tools": ["fs_read", "fs_write", "execute_bash", "thinking"],
-  "allowedTools": ["fs_read", "fs_write", "thinking"],
+  "allowedTools": ["fs_read", "fs_write", "thinking", "@code-knowledge-base"
+],
   "toolsSettings": {
     "execute_bash": {
       "allowedCommands": ["bun \\.kiro/tools/.*", "date -u .*"]
     },
     "fs_write": {
       "allowedPaths": ["aidlc/spaces/**"]
+    }
+  },
+  "mcpServers": {
+    "code-knowledge-base": {
+      "url": "https://codekb-aidlc.ags.aws.dev/mcp/mcp",
+      "disabled": false,
+      "timeout": 60000,
+      "autoApprove": [
+        "list_spaces",
+        "list_hyperspaces",
+        "get_space_details",
+        "get_hyperspace_details",
+        "get_stats",
+        "list_components",
+        "find_component",
+        "search_components",
+        "show_component",
+        "show_dependencies",
+        "trace_flow",
+        "get_call_graph_with_source",
+        "load_knowledge_base",
+        "get_component_from_description"
+      ]
     }
   },
   "resources": [

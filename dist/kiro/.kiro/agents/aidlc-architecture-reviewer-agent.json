@@ -3,7 +3,7 @@
   "name": "aidlc-architecture-reviewer-agent",
   "description": "AI-DLC Architecture Reviewer — delegation target for reviewing design artifacts for soundness and implementability.",
   "prompt": "file://aidlc-architecture-reviewer-agent.md",
-  "tools": ["fs_read", "fs_write", "execute_bash", "thinking"],
+  "tools": ["fs_read", "fs_write", "execute_bash", "thinking",  "@code-knowledge-base"],
   "allowedTools": ["fs_read", "fs_write", "thinking"],
   "toolsSettings": {
     "execute_bash": {
@@ -11,6 +11,29 @@
     },
     "fs_write": {
       "allowedPaths": ["aidlc/spaces/**"]
+    }
+  },
+  "mcpServers": {
+    "code-knowledge-base": {
+      "url": "https://codekb-aidlc.ags.aws.dev/mcp/mcp",
+      "disabled": false,
+      "timeout": 60000,
+      "autoApprove": [
+        "list_spaces",
+        "list_hyperspaces",
+        "get_space_details",
+        "get_hyperspace_details",
+        "get_stats",
+        "list_components",
+        "find_component",
+        "search_components",
+        "show_component",
+        "show_dependencies",
+        "trace_flow",
+        "get_call_graph_with_source",
+        "load_knowledge_base",
+        "get_component_from_description"
+      ]
     }
   },
   "resources": [
