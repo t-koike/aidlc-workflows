@@ -13,6 +13,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  HARNESS_MATRIX,
+  manifestGrantsIdeAgentTools,
+} from "../harness/harness-matrix.ts";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const KIRO = join(REPO_ROOT, "dist", "kiro");
@@ -88,6 +92,24 @@ describe("t148 dist/kiro file structure", () => {
     }
   });
 
+  test("IDE-agent capability ignores unrelated frontmatter additions", () => {
+    expect(
+      manifestGrantsIdeAgentTools({
+        frontmatterAdditions: [
+          { file: "agents/aidlc-example-agent.md", lines: ["badge: example"] },
+          { file: "skills/aidlc/SKILL.md", lines: [`tools: ["read"]`] },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      manifestGrantsIdeAgentTools({
+        frontmatterAdditions: [
+          { file: "agents/aidlc-example-agent.md", lines: [`tools: ["read"]`] },
+        ],
+      }),
+    ).toBe(true);
+  });
+
   test("IDE-native tools: frontmatter grant on delegation targets - kiro-ide ONLY", () => {
     // The Kiro IDE resolves a delegated subagent's tools from the agent .md
     // frontmatter, not from the agent-v1 JSON the CLI reads (field-proven:
@@ -121,11 +143,11 @@ describe("t148 dist/kiro file structure", () => {
       }
     }
     // Leak guard: the grant is IDE-native and must not ship anywhere else.
-    for (const tree of [
-      join(REPO_ROOT, "dist", "claude", ".claude", "agents"),
-      join(K, "agents"), // dist/kiro (CLI)
-      join(REPO_ROOT, "dist", "codex", ".codex", "agents"),
-    ]) {
+    const nonIdeAgentTrees = HARNESS_MATRIX.filter(
+      (harness) => !harness.capabilities.ideAgentTools,
+    ).map((harness) => join(harness.engineRoot, "agents"));
+    expect(nonIdeAgentTrees.length).toBeGreaterThan(0);
+    for (const tree of nonIdeAgentTrees) {
       for (const f of readdirSync(tree).filter((n) => n.endsWith(".md"))) {
         expect(fmToolsOf(join(tree, f))).toBeUndefined();
       }
