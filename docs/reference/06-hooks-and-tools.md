@@ -337,7 +337,7 @@ Special states: `[AIDLC] ready` (no workflow), `[AIDLC] COMPLETE [▓▓▓▓�
 
 ## Audit Event Taxonomy
 
-The audit trail (the intent's `audit/` shards) uses a **71-event taxonomy** defined in `.claude/knowledge/aidlc-shared/audit-format.md`. Every event is tool-owned or hook-owned - the conductor no longer emits events from prose. See [State Machine](12-state-machine.md) for the canonical emitter registry and the audit-first atomicity rules; the summary below is a cross-reference, not the source of truth.
+The audit trail (the intent's `audit/` shards) uses a **72-event taxonomy** defined in `.claude/knowledge/aidlc-shared/audit-format.md`. Every event is tool-owned or hook-owned - the conductor no longer emits events from prose. See [State Machine](12-state-machine.md) for the canonical emitter registry and the audit-first atomicity rules; the summary below is a cross-reference, not the source of truth.
 
 ### Event Categories
 
@@ -419,15 +419,17 @@ The `permissions.allow` array in `.claude/settings.json` pre-approves Claude Cod
 
 ### Agent Tool Restrictions
 
-Every agent inherits the full session toolset by default; the only shipped restriction is `disallowedTools: Task`. A persona can be narrowed by adding an optional `tools:` allowlist to its frontmatter (which drops inherited MCP tools unless the `mcp__<server>__<tool>` ids are also listed), but none of the 11 shipped agents do so. The table below records which agents the methodology *expects* to exercise Bash and WebSearch in their stage work.
+Every agent inherits the full session toolset by default; the only shipped restriction is `disallowedTools: Task`. A persona can be narrowed by adding an optional `tools:` allowlist to its frontmatter (which drops inherited MCP tools unless the `mcp__<server>__<tool>` ids are also listed), but none of the 14 shipped agents do so. The table below records which agents the methodology *expects* to exercise Bash and WebSearch in their stage work.
 
-| Claude Code Tool | Agents That Have It |
-|------------------|---------------------|
+| Claude Code Tool | Agents Expected to Exercise It |
+|------------------|---------------------------------|
 | Bash | aidlc-aws-platform-agent, aidlc-devsecops-agent, aidlc-developer-agent, aidlc-quality-agent, aidlc-pipeline-deploy-agent, aidlc-operations-agent |
 | WebSearch | aidlc-product-agent, aidlc-design-agent, aidlc-compliance-agent |
-| Read/Edit/Write/Glob/Grep/AskUserQuestion | All 11 agents |
+| Read/Edit/Write/Glob/Grep/AskUserQuestion | All 14 agents |
 
-**Pattern:** Bash access is given to agents that need CLI interaction (build tools, test commands, infrastructure). WebSearch is given to research-oriented agents (market research, design references, regulatory frameworks).
+**Pattern:** Bash is expected in roles that need CLI interaction (build tools,
+test commands, infrastructure). WebSearch is expected in research-oriented
+roles (market research, design references, regulatory frameworks).
 
 ---
 
@@ -444,9 +446,15 @@ bun .claude/tools/aidlc-utility.ts <subcommand>
 | Subcommand | Purpose | Emits |
 |------------|---------|-------|
 | `help` | Print usage information and available commands | — |
+| `version` | Print the framework version | — |
 | `status` | Read-only status check from `aidlc-state.md`. Surfaces `[?]` / `[R]` gate awareness in the Status line. | — |
 | `doctor` | Health check: verify hooks, prerequisites, file structure | `HEALTH_CHECKED` |
-| `init` | Run the Initialization phase (scaffold dirs, detect workspace, init state). Accepts `--scope <scope>` (defaults to `poc`), `--depth`, `--test-strategy`, `--force`. | `WORKFLOW_STARTED`, `PHASE_STARTED`, `PHASE_SKIPPED`, `STAGE_STARTED`, `STAGE_COMPLETED`, `WORKSPACE_*`, and the init→first-post-init phase hand-off events |
+| `intent-birth` | Birth a new intent and run the three deterministic Initialization stages. | `WORKFLOW_STARTED`, `PHASE_STARTED`, `PHASE_SKIPPED`, `STAGE_STARTED`, `STAGE_COMPLETED`, `WORKSPACE_*`, and the init-to-first-post-init phase hand-off events |
+| `intent [name]` | List intents (`--json`) or switch the active-intent cursor. Normally routed from `/aidlc intent [name]`. | — |
+| `space [name]` | List spaces (`--json`) or switch the active-space cursor and harness include. Normally routed from `/aidlc space [name]`. | — |
+| `space-create <name>` | Create a new space from the framework memory baseline. Normally routed from `/aidlc space-create <name>`. | — |
+| `codekb-path [--repo <name>] [--json]` | Direct-only, read-only query that prints the deterministic per-repo codekb directory. There is no `/aidlc codekb-path` route. | — |
+| `select-plugins [names]` | Direct-only query/update for the install's enabled plugin set. There is no `/aidlc select-plugins` route. | `PLUGIN_SELECTION_CHANGED` in set mode |
 | `scope-change` | Atomic scope updates mid-workflow (recalculate stage inclusion). Re-plans which stages are EXECUTE/SKIP. | `SCOPE_CHANGED` |
 | `config-change` | `--depth` / `--test-strategy` updates on an active workflow | `DEPTH_CHANGED`, `TEST_STRATEGY_CHANGED` |
 | `set-status` | Low-level state-field sync (called by `sync-statusline.ts` hook on TaskUpdate) | — |
@@ -454,6 +462,15 @@ bun .claude/tools/aidlc-utility.ts <subcommand>
 | `detect` | Read-only composer scan (the dispatched composer's first call): prints the stock scope registry, the compiled stage graph summary, and the paths a composed scope's two files must land at, as JSON (`--json`). Mutates nothing. | — |
 | `recompose` | In-flight plan re-shape: `--skip <slug,...>` / `--add <slug,...>` flips PENDING ahead-of-cursor stages' plan suffixes on the live state file, under the audit lock. Validates strictly (a starved required input, a frozen/behind-cursor stage, a walking-skeleton anchor move, a non-Running workflow, or autonomous Construction all reject) and rebuilds the derived state fields. | `RECOMPOSED` |
 | `resolve-env-scope` | Validate `AWS_AIDLC_DEFAULT_SCOPE` env var and emit its value to stdout | — |
+| `scope-table` | Render or drift-check the compiled scope table in the orchestrator skill. | — |
+| `stage-table` | Render or drift-check the compiled stage table in the orchestrator skill. | — |
+
+The user-facing `intent`, `space`, and `space-create` forms are covered in
+[CLI Commands](../guide/12-cli-commands.md) and
+[Spaces and Intents](../guide/03-spaces-and-intents.md). `codekb-path` and
+`select-plugins` are intentionally invoked directly as
+`bun <harness-dir>/tools/aidlc-utility.ts <verb>`; neither is an orchestrator
+command.
 
 ### Design Rationale
 

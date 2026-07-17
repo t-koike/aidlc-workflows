@@ -1,14 +1,14 @@
 # Agent Reference
 
-Technical reference for the 11 AI-DLC agents: configuration, stage ownership,
-collaboration patterns, and comparison data.
+Technical reference for AI-DLC's 14-agent roster: 11 domain experts, 2
+review-only agents, and the adaptive-workflows composer.
 
 For design philosophy and rationale, see the
 [Agents chapter in the User Guide](../../guide/06-agents.md).
 
 ---
 
-## The 13 Agents (11 domain experts + 2 reviewers)
+## The 14 Agents (11 domain experts + 2 reviewers + composer)
 
 | # | Agent | Domain |
 |---|-------|--------|
@@ -25,6 +25,7 @@ For design philosophy and rationale, see the
 | 11 | [aidlc-operations-agent](operations-agent.md) | Observability, incident response, feedback loops |
 | 12 | aidlc-product-lead-agent | Review-only: requirements / user-story / UX quality gate (balanced tier) |
 | 13 | aidlc-architecture-reviewer-agent | Review-only: technical-design soundness / implementability gate (balanced tier) |
+| 14 | aidlc-composer-agent | Adaptive workflow composition: proposes tailored stage plans and pending-stage reshapes |
 
 ---
 
@@ -110,8 +111,11 @@ effort suffices. See the projection table and the `tier_cap` override in
 
 ## Agent Comparison Matrix
 
-| Agent | Bash | WebSearch | Tier | Lead Stages | Support Stages | Total Stage Involvement |
-|-------|------|-----------|------|-------------|----------------|-------------------------|
+`Yes` in the next two columns means the methodology expects the persona to use
+that inherited tool; it does not grant or withhold access.
+
+| Agent | Bash Expected Use | WebSearch Expected Use | Tier | Lead Stages | Support Stages | Total Stage Involvement |
+|-------|-------------------|------------------------|------|-------------|----------------|-------------------------|
 | aidlc-product-agent | No | Yes | judgment | 5 | 3 | 8 |
 | aidlc-design-agent | No | Yes | judgment | 2 | 2 | 4 |
 | aidlc-delivery-agent | No | No | templated | 3 | 2 | 5 |
@@ -128,8 +132,8 @@ effort suffices. See the projection table and the `tier_cap` override in
 - The aidlc-architect-agent has the broadest stage involvement (9 stages across 3 phases), reflecting its role as the central design authority.
 - Across the full 14-agent roster, nine agents carry the `judgment` tier and five step down (the two `balanced` reviewers plus the three `templated` planners); the stepped-down agents produce reviews against explicit checklists or dominantly templated planning, CI/CD, and runbook work. The matrix above covers the 11 domain-expert agents.
 - The aidlc-compliance-agent operates purely in an advisory capacity (4 support stages across Ideation, Construction, and Operation; no lead stages).
-- Six of 11 agents have Bash access, all in roles that need CLI interaction (infrastructure, security, development, testing, deployment, operations).
-- Three agents have WebSearch access for research tasks (product, design, compliance).
+- Six of 11 agents are expected to use Bash for CLI interaction (infrastructure, security, development, testing, deployment, operations).
+- Three agents are expected to use WebSearch for research tasks (product, design, compliance).
 
 ---
 
