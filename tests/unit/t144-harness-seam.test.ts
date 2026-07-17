@@ -43,7 +43,7 @@ const CLAUDE_LIB = join(CLAUDE_TOOLS, "aidlc-lib.ts");
 function libInHarnessTree(root: string, harness: string, rulesSubdir?: string): string {
   const toolsDir = join(root, harness, "tools");
   mkdirSync(join(toolsDir, "data"), { recursive: true });
-  for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
+  for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-runtime-paths.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
     cpSync(join(CLAUDE_TOOLS, sibling), join(toolsDir, sibling));
   }
   // Seed the compiled-data files (stage-graph/scope-grid) from claude — they are
@@ -105,7 +105,7 @@ describe("t144 codex harness seam — harnessDir + resolveProjectDir ladder ×3 
     try {
       // Lib copied OUTSIDE any harness tree → derivation misses → CWD probe.
       const libCopy = join(tmp, "aidlc-lib.ts");
-      for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
+      for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-runtime-paths.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
         cpSync(join(CLAUDE_TOOLS, sibling), join(tmp, sibling));
       }
       cpSync(join(CLAUDE_TOOLS, "data"), join(tmp, "data"), { recursive: true });
@@ -137,7 +137,7 @@ describe("t144 codex harness seam — harnessDir + resolveProjectDir ladder ×3 
     try {
       // Lib outside any harness tree → suffix strip misses → CWD marker rung.
       const libCopy = join(tmp, "aidlc-lib.ts");
-      for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
+      for (const sibling of ["aidlc-lib.ts", "aidlc-graph.ts", "aidlc-runtime-paths.ts", "aidlc-stage-schema.ts", "aidlc-version.ts"]) {
         cpSync(join(CLAUDE_TOOLS, sibling), join(tmp, sibling));
       }
       cpSync(join(CLAUDE_TOOLS, "data"), join(tmp, "data"), { recursive: true });
@@ -154,6 +154,16 @@ describe("t144 codex harness seam — harnessDir + resolveProjectDir ladder ×3 
     expect(
       evalLib(CLAUDE_LIB, "resolveProjectDir()", { env: { CLAUDE_PROJECT_DIR: "/from/env" } }),
     ).toBe("/from/env");
+    const canonicalTmp = realpathSync(tmpdir());
+    expect(
+      evalLib(CLAUDE_LIB, 'resolveProjectDir("relative/project")', { cwd: canonicalTmp }),
+    ).toBe(join(canonicalTmp, "relative/project"));
+    expect(
+      evalLib(CLAUDE_LIB, "resolveProjectDir()", {
+        cwd: canonicalTmp,
+        env: { AIDLC_PROJECT_DIR: "relative/project" },
+      }),
+    ).toBe(join(canonicalTmp, "relative/project"));
   });
 
   // rulesSubdir() is the companion seam: the AIDLC markdown rule layers live

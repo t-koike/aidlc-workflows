@@ -20,11 +20,14 @@ type Input = {
 };
 
 async function resolveProjectDir(input: Input): Promise<string> {
-  // Method 1: stdin JSON (statusline-only — the host pipes workspace here).
+  // Method 1: explicit dispatcher/plugin routing.
+  if (process.env.AIDLC_PROJECT_DIR) return process.env.AIDLC_PROJECT_DIR;
+
+  // Method 2: stdin JSON (statusline-only — the host pipes workspace here).
   const fromStdin = input.workspace?.project_dir;
   if (fromStdin) return fromStdin;
 
-  // Methods 2-4: the shared hook seam — CLAUDE_PROJECT_DIR, then script-path
+  // Methods 3-5: the shared hook seam — CLAUDE_PROJECT_DIR, then script-path
   // derivation and CWD probe across ALL harness dirs (.claude/.kiro/.codex).
   // Using the seam (rather than a private .claude-hardcoded copy) keeps this
   // hook harness-neutral like the other 9 core hooks: a future kiro/codex
@@ -217,11 +220,10 @@ function printLine(left: string, right: { plain: string; formatted: string }): v
   }
 }
 
-async function main(): Promise<void> {
+async function main(stdinText: string): Promise<void> {
   // Skip stdin read when stdin is a TTY — Claude Code always pipes JSON,
   // never runs the statusline with a terminal attached. Without this guard
   // a direct run / test / debug-mode pipeline would block on terminal input.
-  const stdinText = process.stdin.isTTY ? "" : await Bun.stdin.text();
   let input: Input = {};
   try {
     input = stdinText ? JSON.parse(stdinText) : {};
@@ -280,4 +282,11 @@ async function main(): Promise<void> {
   printLine(output, right);
 }
 
-await main();
+export async function run(input: string): Promise<number> {
+  await main(process.stdin.isTTY ? "" : input);
+  return 0;
+}
+
+if (import.meta.main) {
+  process.exit(await run(await Bun.stdin.text()));
+}

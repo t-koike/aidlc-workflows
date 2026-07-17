@@ -9,8 +9,9 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 import { appendAuditEntry, appendAuditEntryUnlocked } from "./aidlc-audit.ts";
 import {
   artifactsRegistryFor,
@@ -111,12 +112,15 @@ import {
 } from "./aidlc-lib.ts";
 import { validateStageFrontmatter } from "./aidlc-stage-schema.ts";
 import { AIDLC_VERSION } from "./aidlc-version.ts";
+import {
+  compiledExecutable,
+  resolveHarnessPath,
+  resolveSkillsPath,
+} from "./aidlc-runtime-paths.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const TOOLS_DIR = dirname(fileURLToPath(import.meta.url));
 
 const VALID_DEPTHS: Record<string, string> = {
   minimal: "Minimal",
@@ -130,14 +134,23 @@ const VALID_TEST_STRATEGIES: Record<string, string> = {
   comprehensive: "Comprehensive",
 };
 
+const CONFIG_KEYS = ["depth", "test-strategy"] as const;
+const NO_STATE_FILE_MESSAGE =
+  "No state file found. Start a workflow first by describing what to build (/aidlc \"build the auth service\").";
+const INIT_TRANSITION_MESSAGE =
+  "init now lays down the project data tree and is not yet available in this release. To start work, describe what to build: /aidlc \"build the auth service\".";
+const UPGRADE_UNAVAILABLE_MESSAGE =
+  "upgrade is not available in this install; it arrives with the packaged binary distribution.";
+
+let errorArgs: string[] = [];
+let errorProjectDirArg: string | undefined;
+
 function die(msg: string): never {
-  // Parse --project-dir from argv so ERROR_LOGGED lands in the correct workflow
-  // even on errors raised BEFORE main() completes flag parsing. Fall back to
-  // default resolution (env var / cwd) if absent.
-  const args = process.argv.slice(2);
-  const pdIdx = args.indexOf("--project-dir");
-  const explicitPd = pdIdx !== -1 && pdIdx + 1 < args.length ? args[pdIdx + 1] : undefined;
-  const pd = resolveProjectDir(explicitPd);
+  // main(argv) seeds this context before dispatch so ERROR_LOGGED lands in the
+  // same workflow the argv-selected command was targeting. Fall back to default
+  // resolution (env var / cwd) for direct in-process helper calls.
+  const args = errorArgs;
+  const pd = resolveProjectDir(errorProjectDirArg);
   const command = `aidlc-utility ${args.join(" ")}`.trim();
   emitError(pd, "aidlc-utility", command, msg);
 }
@@ -188,11 +201,16 @@ Utilities:
   compose "<task>"  Propose a tailored EXECUTE/SKIP plan (mid-workflow: re-shape the pending stages)
   compose --report <path>  Compose from a scan report (triage findings into a fix-and-ship run)
   --new-scope "<task>"  Force the composer to synthesize a custom scope even when a stock scope matches
-  intent            List intents in the active space (read-only; --json for structured output)
-  intent <name>     Switch the active intent
-  space             List spaces (read-only; --json for structured output)
-  space <name>      Switch the active space (team)
-  space-create <name>  Create a new space (team) seeded from the framework baseline
+  intent list       List intents in the active space (read-only; --json for structured output)
+  intent switch <name>  Switch the active intent (bare intent <name> still works)
+  space list        List spaces (read-only; --json for structured output)
+  space switch <name>  Switch the active space (bare space <name> still works)
+  space create <name>  Create a new space (space-create <name> still works)
+  config get <key>  Show active workflow config (depth, test-strategy)
+  config set <key> <value>  Change active workflow config (depth, test-strategy)
+  config list       List active workflow config (--json for structured output)
+  plugin list       List installed plugins and enabled state (--json for structured output)
+  plugin sync       Compose installed plugins into the current install
   --doctor          Run health check on hooks, settings, and directory structure
   --stage <id>      Jump to a specific stage (by slug or number, e.g., code-generation or 3.5)
   --phase <name>    Jump to the first in-scope stage of a phase (e.g., construction or 3)
@@ -210,6 +228,8 @@ Examples:
   /aidlc feature                                Start a feature workflow
   /aidlc Fix the login timeout bug              Auto-detected as bugfix scope
   /aidlc compose "harden the deploy pipeline"   Composer proposes a tailored plan
+  /aidlc config list                         Show depth and test strategy
+  /aidlc plugin list                         Show installed plugin selection
   /aidlc                                        Resume or begin
   /aidlc --stage code-generation                Jump to code-generation stage
   /aidlc --phase construction --scope bugfix    Jump to construction with bugfix scope
@@ -287,8 +307,37 @@ function resetSelectionSensitiveCaches(): void {
   _resetScopeMappingForTests();
 }
 
-function stageGraphDataPath(): string {
-  return join(TOOLS_DIR, "data", "stage-graph.json");
+function mutableHarnessDataPath(projectDir: string): string {
+  return resolveHarnessPath(
+    ["tools", "data", "harness.json"],
+    { mutable: true, projectDir },
+  );
+}
+
+function stageGraphDataPath(projectDir: string): string {
+  return resolveHarnessPath(
+    ["tools", "data", "stage-graph.json"],
+    { mutable: true, projectDir },
+  );
+}
+
+function scopeGridDataPath(projectDir: string): string {
+  return resolveHarnessPath(
+    ["tools", "data", "scope-grid.json"],
+    { mutable: true, projectDir },
+  );
+}
+
+function requireInstalledHarness(projectDir: string): void {
+  const installedLib = resolveHarnessPath(
+    ["tools", "aidlc-lib.ts"],
+    { mutable: true, projectDir },
+  );
+  if (!existsSync(installedLib)) {
+    die(
+      `select-plugins requires an installed project harness at ${dirname(dirname(installedLib))}.`,
+    );
+  }
 }
 
 function knownPluginNames(): string[] {
@@ -342,21 +391,47 @@ function readHarnessDataObject(): Record<string, unknown> {
   return { harnessDir: harnessDir(), rulesSubdir: rulesSubdir() };
 }
 
-function writePluginSelection(names: string[]): void {
+function writePluginSelection(projectDir: string, names: string[]): void {
   const data = readHarnessDataObject();
   data.plugins = names;
-  mkdirSync(dirname(harnessDataPath()), { recursive: true });
-  writeFileSync(harnessDataPath(), `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  const path = mutableHarnessDataPath(projectDir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
   resetSelectionSensitiveCaches();
 }
 
 function runBunTool(projectDir: string, rel: string, args: string[], label: string): void {
+  let dispatcherArgs: string[];
+  if (rel === "aidlc-graph.ts") {
+    dispatcherArgs = ["graph", ...args];
+  } else if (rel === "aidlc-runner-gen.ts" && args[0] === "write") {
+    dispatcherArgs = ["gen", "runners", ...args.slice(1)];
+  } else if (rel === "aidlc-runner-gen.ts" && args[0] === "scopes") {
+    dispatcherArgs = ["gen", "runner-scopes", ...args.slice(1)];
+  } else {
+    throw new Error(`No dispatcher route for ${rel} ${args.join(" ")}`);
+  }
+  dispatcherArgs.push("--project-dir", projectDir);
+  const executable = compiledExecutable();
+  const command = executable
+    ? [executable, ...dispatcherArgs]
+    : [
+        process.execPath,
+        resolveHarnessPath(["tools", rel], { projectDir }),
+        ...args,
+        "--project-dir",
+        projectDir,
+      ];
   const result = Bun.spawnSync({
-    cmd: [process.execPath, join(TOOLS_DIR, rel), ...args],
+    cmd: command,
     cwd: projectDir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, AIDLC_HARNESS_DIR: harnessDir() },
+    env: {
+      ...process.env,
+      AIDLC_HARNESS_DIR: harnessDir(),
+      AIDLC_PROJECT_DIR: projectDir,
+    },
   });
   if (result.exitCode !== 0) {
     const stdout = new TextDecoder().decode(result.stdout).trim();
@@ -416,7 +491,7 @@ function replaceGeneratedRegion(
 function regenerateSelectionSurfaces(projectDir: string): void {
   runBunTool(projectDir, "aidlc-graph.ts", ["compile"], "aidlc-graph compile");
   resetSelectionSensitiveCaches();
-  const skillsDir = join(TOOLS_DIR, "..", "skills");
+  const skillsDir = resolveSkillsPath([], { mutable: true, projectDir });
   if (existsSync(skillsDir)) {
     runBunTool(projectDir, "aidlc-runner-gen.ts", ["write"], "aidlc-runner-gen write");
     runBunTool(projectDir, "aidlc-runner-gen.ts", ["scopes"], "aidlc-runner-gen scopes");
@@ -459,11 +534,14 @@ interface StageContribRecord {
 }
 
 function pluginContribSidecarPath(plugin: string): string {
-  return join(TOOLS_DIR, "data", `plugin-contrib-${plugin.replace(/[^\w.-]/g, "_")}.json`);
+  return resolveHarnessPath(
+    ["tools", "data", `plugin-contrib-${plugin.replace(/[^\w.-]/g, "_")}.json`],
+    { mutable: true },
+  );
 }
 
 function installedStagesRoot(): string {
-  return join(TOOLS_DIR, "..", "aidlc-common", "stages");
+  return resolveHarnessPath(["aidlc-common", "stages"], { mutable: true });
 }
 
 // Remove recorded values from a `field:` block. An emptied block collapses to
@@ -653,6 +731,7 @@ function handleSelectPlugins(projectDir: string, positional: string[]): void {
     die(`Unknown plugin name(s): ${unknown.join(", ")}. Valid plugins: ${known.join(", ")}.`);
   }
   const names = [...new Set(parsedSelection.names)].sort();
+  requireInstalledHarness(projectDir);
 
   const violations = activeWorkflowDependencyViolations(projectDir, new Set(names));
   if (violations.length > 0) {
@@ -671,9 +750,9 @@ function handleSelectPlugins(projectDir: string, positional: string[]): void {
   const disabling = known.filter((n) => n !== "aidlc" && !nameSet.has(n));
 
   const snapshots = [
-    snapshotFile(harnessDataPath()),
-    snapshotFile(stageGraphDataPath()),
-    snapshotFile(scopeGridPath()),
+    snapshotFile(mutableHarnessDataPath(projectDir)),
+    snapshotFile(stageGraphDataPath(projectDir)),
+    snapshotFile(scopeGridDataPath(projectDir)),
   ];
 
   try {
@@ -683,7 +762,7 @@ function handleSelectPlugins(projectDir: string, positional: string[]): void {
     // rollback restores them too. Re-enabling restores contributions on the
     // next session start (the plugin's own compose hook re-merges).
     const strippedPlugins = stripDisabledPluginContributions(disabling, snapshots);
-    writePluginSelection(names);
+    writePluginSelection(projectDir, names);
     regenerateSelectionSurfaces(projectDir);
     appendAuditEvent(projectDir, "PLUGIN_SELECTION_CHANGED", {
       "Previous Selection": previousSelection,
@@ -710,6 +789,112 @@ function handleSelectPlugins(projectDir: string, positional: string[]): void {
     }
     die(`select-plugins failed: ${original}.${recoveryMessage}`);
   }
+}
+
+function pluginListRows(): Array<{ name: string; enabled: boolean }> {
+  const selected = pluginsEnabled();
+  return knownPluginNames().map((name) => ({
+    name,
+    enabled: selected === null || selected.has(name),
+  }));
+}
+
+function handlePluginList(flags: Record<string, string>): void {
+  const selected = pluginsEnabled();
+  const rows = pluginListRows();
+  if (flags.json === "true") {
+    process.stdout.write(
+      `${JSON.stringify({
+        plugins: rows,
+        selectionActive: selected !== null,
+      })}\n`,
+    );
+    return;
+  }
+
+  process.stdout.write(
+    `Plugin selection: ${renderPluginSelection(selected)}\n` +
+      rows.map((row) => `${row.name} ${row.enabled ? "enabled" : "disabled"}`).join("\n") +
+      (rows.length > 0 ? "\n" : ""),
+  );
+}
+
+function pluginRootCandidatesFromEnv(): string[] {
+  const roots = [
+    process.env.CLAUDE_PLUGIN_ROOT,
+    process.env.PLUGIN_ROOT,
+    process.env.AIDLC_PLUGIN_ROOT,
+  ]
+    .map((value) => value?.trim() ?? "")
+    .filter((value) => value.length > 0);
+  return [...new Set(roots)];
+}
+
+async function handlePluginSync(projectDir: string): Promise<void> {
+  const roots = pluginRootCandidatesFromEnv();
+  const composePaths = roots
+    .map((root) => ({ root, compose: join(root, "hooks", "compose.ts") }))
+    .filter((item) => existsSync(item.compose));
+
+  if (composePaths.length === 0) {
+    process.stdout.write("no installed plugins; nothing to sync\n");
+    return;
+  }
+
+  for (const item of composePaths) {
+    const composeEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      AIDLC_HARNESS_DIR: harnessDir(),
+      AIDLC_PROJECT_DIR: projectDir,
+      AIDLC_PLUGIN_ROOT: item.root,
+      CLAUDE_PLUGIN_ROOT: item.root,
+      PLUGIN_ROOT: item.root,
+    };
+    if (import.meta.url.includes("/$bunfs/")) {
+      const envKeys = [
+        "AIDLC_HARNESS_DIR",
+        "AIDLC_PROJECT_DIR",
+        "AIDLC_PLUGIN_ROOT",
+        "CLAUDE_PLUGIN_ROOT",
+        "PLUGIN_ROOT",
+        "AIDLC_COMPILED_EXECUTABLE",
+      ] as const;
+      const previous = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      Object.assign(process.env, composeEnv, {
+        AIDLC_COMPILED_EXECUTABLE: process.execPath,
+      });
+      try {
+        const mod = await import(pathToFileURL(item.compose).href) as {
+          compose?: () => void | Promise<void>;
+        };
+        if (typeof mod.compose !== "function") {
+          die(`plugin-sync failed for ${item.root}: compose.ts does not export compose()`);
+        }
+        await mod.compose();
+      } catch (error) {
+        die(`plugin-sync failed for ${item.root}: ${errorMessage(error)}`);
+      } finally {
+        for (const key of envKeys) {
+          const value = previous[key];
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+      continue;
+    }
+
+    const result = spawnSync(process.execPath, [item.compose], {
+      cwd: projectDir,
+      encoding: "utf-8",
+      env: composeEnv,
+    });
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || `exit ${result.status ?? 1}`).trim();
+      die(`plugin-sync failed for ${item.root}: ${detail}`);
+    }
+  }
+
+  process.stdout.write(`plugin sync complete: ${composePaths.length} plugin(s)\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1197,7 +1382,7 @@ function handleDoctor(projectDir: string): void {
 
     const graphSlugs = new Set(graphAll.map((s) => s.slug));
     const missingEnabled: string[] = [];
-    const stagesRoot = join(TOOLS_DIR, "..", "aidlc-common", "stages");
+    const stagesRoot = resolveHarnessPath(["aidlc-common", "stages"]);
     for (const phase of PHASES) {
       const dir = join(stagesRoot, phase);
       if (!existsSync(dir)) continue;
@@ -2216,7 +2401,7 @@ function handleDoctor(projectDir: string): void {
   // Tracks attempted vs valid separately so the label can't silently say
   // "N/N valid" when files are missing (that's the orphan-files check's job).
   try {
-    const stagesDir = join(TOOLS_DIR, "..", "aidlc-common", "stages");
+    const stagesDir = resolveHarnessPath(["aidlc-common", "stages"]);
     const graph = loadStageGraphAll();
     const agentSlugs = loadAgents().map((a) => a.slug);
     const schemaFails: { slug: string; errors: string[] }[] = [];
@@ -2421,49 +2606,59 @@ function handleDoctor(projectDir: string): void {
   // it must create nothing. On a project with a born intent the emit fires
   // exactly as before (BARE appendAuditEvent — the only throw is a real write
   // failure, which the rest of the codebase lets propagate).
-  const pairedRules = loadRules();
-  // sensors_applicable is REQUIRED on a compiled graph node, but a
-  // hand-rolled or pre-milestone-9 graph JSON can omit it; `?? []` keeps this
-  // advisory row from crashing doctor on a malformed/legacy graph (the
-  // same defensive posture the cycle/orphan/scope checks take above).
-  const sensorIds = new Set(
-    loadGraph().flatMap((n) => (n.sensors_applicable ?? []).map((s) => s.id))
-  );
-  let pairM = 0;
-  let pairX = 0;
-  let pairP = 0;
-  // unpaired holds the U set (sensor id named but absent anywhere);
-  // unpaired.length is U, so no separate counter is needed.
-  const unpaired: Array<{ file: string; sensor: string }> = [];
-  for (const rule of pairedRules) {
-    const pairing = rule.frontmatter.pairing;
-    if (pairing === undefined) continue;
-    pairM++;
-    if (pairing === "feedforward-only") {
-      pairX++;
-      continue;
+  let pairedRuleCount: number | null = null;
+  try {
+    const pairedRules = loadRules();
+    pairedRuleCount = pairedRules.length;
+    // sensors_applicable is REQUIRED on a compiled graph node, but a
+    // hand-rolled or pre-milestone-9 graph JSON can omit it; `?? []` keeps this
+    // advisory row from crashing doctor on a malformed/legacy graph (the
+    // same defensive posture the cycle/orphan/scope checks take above).
+    const sensorIds = new Set(
+      loadGraph().flatMap((n) => (n.sensors_applicable ?? []).map((s) => s.id))
+    );
+    let pairM = 0;
+    let pairX = 0;
+    let pairP = 0;
+    // unpaired holds the U set (sensor id named but absent anywhere);
+    // unpaired.length is U, so no separate counter is needed.
+    const unpaired: Array<{ file: string; sensor: string }> = [];
+    for (const rule of pairedRules) {
+      const pairing = rule.frontmatter.pairing;
+      if (pairing === undefined) continue;
+      pairM++;
+      if (pairing === "feedforward-only") {
+        pairX++;
+        continue;
+      }
+      const bareId = pairing.replace(/^aidlc-/, "");
+      if (sensorIds.has(bareId)) {
+        pairP++;
+      } else {
+        unpaired.push({ file: rule.path, sensor: pairing });
+      }
     }
-    const bareId = pairing.replace(/^aidlc-/, "");
-    if (sensorIds.has(bareId)) {
-      pairP++;
+    const needing = pairM - pairX;
+    let coverageLabel: string;
+    if (needing === 0) {
+      coverageLabel = `Paired sensor coverage: no sensor-bound rules (${pairX} feedforward-only)`;
     } else {
-      unpaired.push({ file: rule.path, sensor: pairing });
+      coverageLabel = `Paired sensor coverage: ${pairP}/${needing} guardrails paired (${pairX} feedforward-only)`;
     }
+    if (unpaired.length > 0) {
+      const unpairedDetail = unpaired
+        .map((u) => `unpaired: ${u.file} → ${u.sensor} (no stage binds it)`)
+        .join("; ");
+      coverageLabel = `${coverageLabel}; ${unpairedDetail}`;
+    }
+    results.push({ pass: true, label: coverageLabel });
+  } catch (e) {
+    results.push({
+      pass: false,
+      label: "Paired sensor coverage: check failed",
+      fix: errorMessage(e),
+    });
   }
-  const needing = pairM - pairX;
-  let coverageLabel: string;
-  if (needing === 0) {
-    coverageLabel = `Paired sensor coverage: no sensor-bound rules (${pairX} feedforward-only)`;
-  } else {
-    coverageLabel = `Paired sensor coverage: ${pairP}/${needing} guardrails paired (${pairX} feedforward-only)`;
-  }
-  if (unpaired.length > 0) {
-    const unpairedDetail = unpaired
-      .map((u) => `unpaired: ${u.file} → ${u.sensor} (no stage binds it)`)
-      .join("; ");
-    coverageLabel = `${coverageLabel}; ${unpairedDetail}`;
-  }
-  results.push({ pass: true, label: coverageLabel });
 
   // ---------------------------------------------------------------------------
   // Check 7 — Intent registry ⇄ record-dir reconciliation
@@ -2514,17 +2709,36 @@ function handleDoctor(projectDir: string): void {
     });
   }
 
+  try {
+    const shadows: string[] = [];
+    for (const sp of listSpaces(projectDir)) {
+      if (RESERVED_RECORD_NAMES.has(sp.name)) shadows.push(`space '${sp.name}'`);
+    }
+    const active = activeSpace(projectDir);
+    for (const intent of listIntents(projectDir, active)) {
+      if (RESERVED_RECORD_NAMES.has(intent.slug)) shadows.push(`intent '${intent.slug}'`);
+    }
+    if (shadows.length > 0) {
+      results.push({
+        pass: true,
+        label: `Workspace names shadowing grammar verbs (advisory): ${shadows.join(", ")} - reachable via explicit switch; consider renaming.`,
+      });
+    }
+  } catch {
+    // Advisory only; a scan failure must not hide the main doctor report.
+  }
+
   // Cold-safe gate: only emit audit when an audit trail already exists. On a
   // pristine project (no audit shard / flat audit.md) doctor prints its health
   // report and creates NOTHING — it stays a pure read-only diagnostic. On an
   // initialized project both GUARDRAIL_LOADED and HEALTH_CHECKED emit as before.
   const auditExists = auditShards(projectDir).length > 0;
 
-  if (auditExists) {
+  if (auditExists && pairedRuleCount !== null) {
     appendAuditEvent(projectDir, "GUARDRAIL_LOADED", {
       Scope: "all",
       Path: `${harnessDir()}/${rulesSubdir()}/`,
-      "Rule count": String(pairedRules.length),
+      "Rule count": String(pairedRuleCount),
     });
   }
 
@@ -3612,13 +3826,21 @@ ${submoduleWarningLine}First post-init stage: ${firstPostInit} (${firstPostInitP
 }
 
 // ---------------------------------------------------------------------------
-// state-init / init — deprecated aliases, merged into intent-birth
+// state-init / init - transition aliases
 // ---------------------------------------------------------------------------
+
+function handleInitTransition(): void {
+  die(INIT_TRANSITION_MESSAGE);
+}
 
 function handleStateInit(_projectDir: string, _flags: Record<string, string>): void {
   die(
     "state-init is merged into intent-birth. A workflow starts by describing what to build (/aidlc \"build the auth service\"); the engine auto-births the intent."
   );
+}
+
+function handleUpgrade(): void {
+  die(UPGRADE_UNAVAILABLE_MESSAGE);
 }
 
 // ---------------------------------------------------------------------------
@@ -3696,7 +3918,19 @@ function printSpaceListing(projectDir: string, asJson: boolean): void {
 // the structured query shape.
 function handleIntent(projectDir: string, positional: string[], flags: Record<string, string>): void {
   const asJson = flags.json === "true";
-  const target = positional[1];
+  const verbOrTarget = positional[1];
+  if (verbOrTarget === "list") {
+    printIntentListing(projectDir, asJson);
+    return;
+  }
+  if (verbOrTarget === "birth") {
+    handleIntentBirth(projectDir, flags);
+    return;
+  }
+  const target = verbOrTarget === "switch" ? positional[2] : verbOrTarget;
+  if (verbOrTarget === "switch" && !target) {
+    die("Usage: aidlc-utility intent switch <name>");
+  }
   if (!target) {
     printIntentListing(projectDir, asJson);
     return;
@@ -3763,7 +3997,19 @@ function handleIntent(projectDir: string, positional: string[], flags: Record<st
 // emits the structured shape.
 function handleSpace(projectDir: string, positional: string[], flags: Record<string, string>): void {
   const asJson = flags.json === "true";
-  const raw = positional[1];
+  const verbOrTarget = positional[1];
+  if (verbOrTarget === "list") {
+    printSpaceListing(projectDir, asJson);
+    return;
+  }
+  if (verbOrTarget === "create") {
+    handleSpaceCreate(projectDir, ["space-create", positional[2] ?? ""], flags);
+    return;
+  }
+  const raw = verbOrTarget === "switch" ? positional[2] : verbOrTarget;
+  if (verbOrTarget === "switch" && !raw) {
+    die("Usage: aidlc-utility space switch <name>");
+  }
   if (!raw) {
     printSpaceListing(projectDir, asJson);
     return;
@@ -3782,7 +4028,7 @@ function handleSpace(projectDir: string, positional: string[], flags: Record<str
   const spaces = listSpaces(projectDir);
   if (!spaces.some((s) => s.name === target)) {
     die(
-      `Unknown space "${target}". Existing: ${spaces.map((s) => s.name).join(", ")}. This command only switches between existing spaces. Do not create a space to recover from this error - creating one is a separate, deliberate move (/aidlc space-create <name>).`
+      `Unknown space "${target}". Existing: ${spaces.map((s) => s.name).join(", ")}. This command only switches between existing spaces. Do not create a space to recover from this error - creating one is a separate, deliberate move (/aidlc space create <name>, or legacy /aidlc space-create <name>).`
     );
   }
   setActiveSpaceCursor(projectDir, target);
@@ -3858,7 +4104,7 @@ function handleDetect(projectDir: string, flags: Record<string, string>): void {
   );
 }
 
-// `/aidlc space-create <name>` — seed a NEW space's memory. org.md is copied
+// `/aidlc space create <name>` (legacy `/aidlc space-create <name>`) - seed a NEW space's memory. org.md is copied
 // from spaces/default/memory/org.md (the always-present SEED baseline), plus
 // fresh empty team.md/project.md/phases stubs + the templates/ floor. A new team
 // starts at the framework baseline and earns its OWN practices — it does NOT
@@ -4405,8 +4651,38 @@ function handleRecompose(projectDir: string, flags: Record<string, string>): voi
 }
 
 // ---------------------------------------------------------------------------
-// config-change — update depth and/or test-strategy without changing scope
+// config get/list/set - read or update active workflow config
 // ---------------------------------------------------------------------------
+
+function configFieldForKey(key: string): "Depth" | "Test Strategy" | null {
+  if (key === "depth") return "Depth";
+  if (key === "test-strategy") return "Test Strategy";
+  return null;
+}
+
+function readConfigField(projectDir: string, flags: Record<string, string>, field: "Depth" | "Test Strategy"): string {
+  const sp = stateFilePath(projectDir, flags.intent, flags.space);
+  if (!existsSync(sp)) die(NO_STATE_FILE_MESSAGE);
+  const content = readStateFile(projectDir, flags.intent, flags.space);
+  return getField(content, field) || "";
+}
+
+function handleConfigGet(projectDir: string, positional: string[], flags: Record<string, string>): void {
+  const key = positional[1] ?? "";
+  const field = configFieldForKey(key);
+  if (!field) die(`Unknown config key: "${key}". Valid keys: ${CONFIG_KEYS.join(", ")}.`);
+  process.stdout.write(`${readConfigField(projectDir, flags, field)}\n`);
+}
+
+function handleConfigList(projectDir: string, flags: Record<string, string>): void {
+  const depth = readConfigField(projectDir, flags, "Depth");
+  const testStrategy = readConfigField(projectDir, flags, "Test Strategy");
+  if (flags.json === "true") {
+    process.stdout.write(`${JSON.stringify({ depth, "test-strategy": testStrategy })}\n`);
+    return;
+  }
+  process.stdout.write(`depth: ${depth}\ntest-strategy: ${testStrategy}\n`);
+}
 
 function handleConfigChange(projectDir: string, flags: Record<string, string>): void {
   const rawDepth = flags.depth;
@@ -4429,7 +4705,7 @@ function handleConfigChange(projectDir: string, flags: Record<string, string>): 
   }
 
   const sp = stateFilePath(projectDir, flags.intent, flags.space);
-  if (!existsSync(sp)) die("No state file found. Start a workflow first by describing what to build (/aidlc \"build the auth service\").");
+  if (!existsSync(sp)) die(NO_STATE_FILE_MESSAGE);
 
   let content = readStateFile(projectDir, flags.intent, flags.space);
   const oldDepth = getField(content, "Depth");
@@ -4632,9 +4908,15 @@ export function canonicalScopeTableRegion(table: string): string {
 
 function skillMdPath(): string {
   if (process.env.AIDLC_SKILL_MD_PATH) return process.env.AIDLC_SKILL_MD_PATH;
-  const harnessSkill = join(TOOLS_DIR, "..", "skills", "aidlc", "SKILL.md");
+  const harnessSkill = resolveSkillsPath(["aidlc", "SKILL.md"]);
   if (existsSync(harnessSkill)) return harnessSkill;
-  const agentsSkill = join(TOOLS_DIR, "..", "..", ".agents", "skills", "aidlc", "SKILL.md");
+  const agentsSkill = join(
+    dirname(resolveHarnessPath([])),
+    ".agents",
+    "skills",
+    "aidlc",
+    "SKILL.md",
+  );
   if (existsSync(agentsSkill)) return agentsSkill;
   return harnessSkill;
 }
@@ -4913,10 +5195,12 @@ function handleResolveEnvScope(): void {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-function main(): void {
-  const rawArgs = process.argv.slice(2);
+export async function main(argv: string[]): Promise<void> {
+  const rawArgs = argv;
+  errorArgs = [...rawArgs];
   const { positional, flags } = parseArgs(rawArgs);
   const subcommand = positional[0];
+  errorProjectDirArg = flags["project-dir"];
   const projectDir = resolveProjectDir(flags["project-dir"]);
 
   switch (subcommand) {
@@ -4959,16 +5243,23 @@ function main(): void {
     case "select-plugins":
       handleSelectPlugins(projectDir, positional);
       break;
-    // init / state-init — deprecated aliases kept for back-compat only (not in
-    // usage/help). The user-facing `/aidlc --init` is retired in P4: the
-    // workspace shell ships in dist/ (SEED) and the engine auto-births the
-    // intent. `init` now routes to the birth handler so any stale caller still
-    // works; `state-init` dies with migration guidance.
+    case "plugin-list":
+      handlePluginList(flags);
+      break;
+    case "plugin-sync":
+      await handlePluginSync(projectDir);
+      break;
+    // init / state-init are transition-only and intentionally absent from help.
+    // Stale init callers get a loud error for this release; workflow start is
+    // still intent-birth through the orchestrator.
     case "init":
-      handleIntentBirth(projectDir, flags);
+      handleInitTransition();
       break;
     case "state-init":
       handleStateInit(projectDir, flags);
+      break;
+    case "upgrade":
+      handleUpgrade();
       break;
     case "scope-change":
       handleScopeChange(projectDir, flags);
@@ -4981,6 +5272,12 @@ function main(): void {
       break;
     case "config-change":
       handleConfigChange(projectDir, flags);
+      break;
+    case "config-get":
+      handleConfigGet(projectDir, positional, flags);
+      break;
+    case "config-list":
+      handleConfigList(projectDir, flags);
       break;
     case "set-status":
       handleSetStatus(projectDir, flags);
@@ -4999,9 +5296,13 @@ function main(): void {
       break;
     default:
       die(
-        `Usage: aidlc-utility <help|version|status|doctor|intent-birth|intent|space|space-create|codekb-path|detect|select-plugins|recompose|scope-change|config-change|set-status|detect-scope|resolve-env-scope|scope-table|stage-table> [--project-dir <path>] [--scope <scope>] [--json]`
+        `Usage: aidlc-utility <help|version|status|doctor|intent-birth|intent|space|space-create|codekb-path|detect|select-plugins|plugin-list|plugin-sync|recompose|scope-change|config-change|config-get|config-list|set-status|detect-scope|resolve-env-scope|scope-table|stage-table|upgrade> [--project-dir <path>] [--scope <scope>] [--json]`
       );
   }
 }
 
-if (import.meta.main) main();
+if (import.meta.main) {
+  void main(process.argv.slice(2)).catch((error) => {
+    die(errorMessage(error));
+  });
+}

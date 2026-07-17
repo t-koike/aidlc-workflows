@@ -102,6 +102,7 @@ import {
   parseStateStageSuffixes,
   PHASE_NUMBERS,
   PHASES,
+  parseWorkspaceCommand,
   READ_ONLY_FLAGS,
   readAllAuditShards,
   readBoltDagUnitKinds,
@@ -117,7 +118,8 @@ import {
   unitDependencyPath,
   validScopes,
   harnessDir,
-  WORKSPACE_VERBS,
+  type WorkspaceCommand,
+  workspaceCommandUtilityArgv,
 } from "./aidlc-lib.ts";
 import {
   type Consume,
@@ -132,6 +134,7 @@ import {
 // import is safe (aidlc-utility.ts main() runs only under import.meta.main,
 // and utility never imports this module - no cycle).
 import { inferScopeFromText } from "./aidlc-utility.ts";
+import { resolveHarnessPath } from "./aidlc-runtime-paths.ts";
 
 // Read the workflow state file if it exists, else null. The engine's `next` is
 // a pure read: an absent state file is a legitimate branch (no workflow yet),
@@ -147,11 +150,11 @@ function loadStateFileIfPresent(projectDir: string): string | null {
 // orchestrator's freeform-fallback default (SKILL.md detect-scope fallback).
 const DEFAULT_SCOPE = "feature";
 
-// READ_ONLY_FLAGS (--status/--help/--doctor/--version) and WORKSPACE_VERBS
-// (space/space-create/intent) — the terminal-command sets — are the single
-// source of truth in aidlc-lib.ts (imported above), so the engine's `next`
-// routing and any pre-LLM harness seam (the Kiro userPromptSubmit dispatch)
-// classify the same tokens identically. See classifyTerminalCommand there.
+// READ_ONLY_FLAGS (--status/--help/--doctor/--version) and the shared workspace
+// parser (space/space-create/intent) are the terminal-command sources of truth
+// in aidlc-lib.ts, so the engine's `next` routing and any pre-LLM harness seam
+// (the Kiro userPromptSubmit dispatch) classify the same tokens identically.
+// See classifyTerminalCommand there.
 // Both dispatch before any state inspection (SKILL.md "Read-Only Utility
 // Commands" + workspace-vision §3): each maps to a TERMINAL print directive —
 // the engine answers "what move?", the conductor runs the tool and prints its
@@ -177,16 +180,30 @@ function emit(directive: Directive): void {
   console.log(JSON.stringify(result.data));
 }
 
-// --- Composing the sibling CLI tools (shell-out) ---
+// --- Composing sibling CLI tools ---
 //
 // The non-happy-path branches reuse aidlc-jump.ts / aidlc-utility.ts handlers,
 // none of which is importable (both files export zero CLI handlers). We resolve
-// the tools directory off THIS module's own location so the spawned `bun <tool>`
-// runs the same shipped copy regardless of the caller's cwd.
+// the tools directory off THIS module's own location in source mode. A compiled
+// executable re-enters the public dispatcher grammar instead.
 const TOOLS_DIR = dirname(fileURLToPath(import.meta.url));
+const IS_COMPILED = import.meta.url.includes("/$bunfs/");
 
 function toolPath(file: string): string {
   return join(TOOLS_DIR, file);
+}
+
+function toolCommand(toolFile: string, args: string[]): string[] {
+  if (IS_COMPILED) {
+    if (toolFile === "aidlc-utility.ts" && args[0] === "resolve-env-scope") {
+      return [process.execPath, "scope", "resolve-env", ...args.slice(1)];
+    }
+    if (toolFile === "aidlc-jump.ts") {
+      return [process.execPath, "jump", ...args];
+    }
+    throw new Error(`No compiled dispatcher route for ${toolFile} ${args.join(" ")}`);
+  }
+  return [process.execPath, toolPath(toolFile), ...args];
 }
 
 // The result of spawning a sibling tool: its exit code plus captured streams.
@@ -201,7 +218,7 @@ interface ToolRun {
 
 function runTool(toolFile: string, args: string[]): ToolRun {
   const proc = Bun.spawnSync({
-    cmd: ["bun", toolPath(toolFile), ...args],
+    cmd: toolCommand(toolFile, args),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -250,6 +267,11 @@ function errorDirective(message: string): ErrorDirective {
   return { kind: "error", message };
 }
 
+function shellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
 // parked - the terminal directive a parked workflow emits (issue #367). Carries
 // the slug it parked at; the Stop hook treats `parked` as a terminal allow so
 // the conductor can end its turn at a clean inter-stage boundary.
@@ -284,7 +306,7 @@ interface ParsedFlags {
   single?: boolean; // --single: run ONE stage under a synthetic workflow id, never touching the main pointer
   newIntent?: boolean; // --new-intent: the conductor confirmed new-work alongside an active intent → emit the SAME birth directive (with the --label seam) the fresh-start path uses, instead of constructing intent-birth from SKILL.md prose
   intent?: string; // freeform request text (no leading --flag)
-  workspaceVerb?: { verb: string; arg?: string }; // leading workspace verb (space/space-create/intent) + optional <name> arg
+  workspaceCommand?: WorkspaceCommand; // leading workspace command (space/space-create/intent)
   compose?: boolean; // leading `compose` verb: force the composer (front or in-flight)
   newScope?: boolean; // --new-scope: force the composer to SYNTHESIZE a custom scope even when a stock scope matches
   report?: string; // --report <path>: compose from a scan report (the composer triages the file)
@@ -308,37 +330,20 @@ function parseNextFlags(args: string[]): ParsedFlags {
   if (args.length === 1 && (args[0] === "help" || args[0] === "-h")) {
     return { readOnly: "--help" };
   }
+  // Leading workspace nouns own the command. Any later read-only-looking token
+  // is part of that workspace command's argv, not a mode switch, because the
+  // public grammar promises leading-token semantics.
+  const workspaceCommand = parseWorkspaceCommand(args);
+  if (workspaceCommand.kind !== "not-workspace") {
+    if (workspaceCommand.kind === "help") return { readOnly: "--help" };
+    return { workspaceCommand };
+  }
   const flags: ParsedFlags = {};
   const intentWords: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (READ_ONLY_FLAGS.has(a)) {
       flags.readOnly = a;
-      continue;
-    }
-    // A LEADING workspace verb (space/space-create/intent) is the explicit
-    // workspace navigation move (workspace-vision §3). Only the FIRST positional
-    // token counts (i === 0) so freeform prose containing "space"/"intent"
-    // mid-sentence stays intent text. The optional <name> arg is args[1] when it
-    // is present and not itself a --flag; consume it so it is not pushed as
-    // freeform. The engine maps this to a terminal print naming the handler.
-    if (i === 0 && WORKSPACE_VERBS.has(a)) {
-      const next = args[i + 1];
-      const arg = next !== undefined && !next.startsWith("--") ? next : undefined;
-      // `intent help`/`-h` / `space help`/`-h` is a help REQUEST, not a switch
-      // to a record named "help": no per-verb help exists, and the failed
-      // switch would die with an error whose recovery text steers the
-      // conductor into birthing an intent ("help" is also a reserved record
-      // name - RESERVED_RECORD_NAMES - so no real record is shadowed). Route
-      // it to the global help print. space-create is excluded: its handler
-      // refuses a help-shaped name itself with an actionable error (the
-      // reserved-name guard alone would miss "-h", which slugifies to "h").
-      // PARITY: classifyTerminalCommand (aidlc-lib.ts) mirrors this rule.
-      if ((a === "intent" || a === "space") && (arg === "help" || arg === "-h")) {
-        return { readOnly: "--help" };
-      }
-      flags.workspaceVerb = arg !== undefined ? { verb: a, arg } : { verb: a };
-      if (arg !== undefined) i++;
       continue;
     }
     // A LEADING `compose` verb forces the composer (front on a fresh workspace,
@@ -599,16 +604,15 @@ function stageFileFor(phase: string, slug: string): string {
 // its persona in-context with zero per-skill diligence (per the engine design). The file
 // is resolved relative to THIS module (tools/ → ../aidlc-common/) so the shipped
 // copy is read regardless of the caller's cwd, mirroring how stage files resolve.
-const CONDUCTOR_PERSONA_PATH = join(TOOLS_DIR, "..", "aidlc-common", "conductor.md");
-
 // Read the conductor persona, or null if it is absent (a fork that deleted it,
 // or a partial install). The delivery is best-effort: a missing persona is not a
 // routing error — the run-stage directive is still well-formed without the
 // optional field — so we never fail the workflow over it.
 function readConductorPersona(): string | null {
-  if (!existsSync(CONDUCTOR_PERSONA_PATH)) return null;
+  const conductorPersonaPath = resolveHarnessPath(["aidlc-common", "conductor.md"]);
+  if (!existsSync(conductorPersonaPath)) return null;
   try {
-    return readFileSync(CONDUCTOR_PERSONA_PATH, "utf-8");
+    return readFileSync(conductorPersonaPath, "utf-8");
   } catch {
     return null;
   }
@@ -1292,7 +1296,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
   // swallowed. Inert on Claude/Codex: the latch files are never written there (no
   // seam) → fresh is always false → falls through. Advisory: any failure fails
   // open to the normal `next`.
-  if (!flags.readOnly && !flags.workspaceVerb && !flags.stage && !flags.phase &&
+  if (!flags.readOnly && !flags.workspaceCommand && !flags.stage && !flags.phase &&
       !flags.scope && !flags.intent && !flags.resume && !flags.depth && !flags.testStrategy &&
       !flags.single && !flags.compose && !flags.newScope && !flags.report) {
     try {
@@ -1346,24 +1350,31 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     return;
   }
 
-  // Branch 1b — workspace navigation verbs (space/space-create/intent) dispatch
+  // Branch 1b — workspace commands (space/space-create/intent) dispatch
   // BEFORE any state inspection, mirroring Branch 1. This MUST precede
   // resolveProjectDir/loadState: a switch works whether or not a workflow is
   // active, and placing it later would let e.g. `space teamB` fall into the
-  // happy-path branch and advance the WRONG intent (the bug this fixes). All of
-  // space / space-create / intent map to the same TERMINAL print shape — switch
-  // is a cursor write that echoes the new world and stops, space-create mutates
-  // but advances no workflow, and a bare `space`/`intent` (no arg) is a
-  // read-only listing — so none of them leaves anything for `next` to continue
-  // into. The deterministic handler (aidlc-utility.ts) itself branches
-  // list-vs-switch on whether the <name> arg is present, so the engine just
-  // passes args[1] through when captured and omits it when absent — it does NOT
-  // replicate that decision here. The harness dir is resolved through
-  // harnessDir() so the directive names the right tree on every harness.
-  if (flags.workspaceVerb) {
-    const { verb, arg } = flags.workspaceVerb;
+  // happy-path branch and advance the WRONG intent. The shared parser decides
+  // list/switch/create/birth/error semantics, then this adapter renders the
+  // deterministic utility argv. Leading-token precedence is deliberate: a
+  // `--status` after a workspace noun is that command's token, not a mode
+  // switch. The harness dir is resolved through harnessDir() so the directive
+  // names the right tree on every harness.
+  if (flags.workspaceCommand) {
+    const command = flags.workspaceCommand;
+    if (command.kind === "error") {
+      emit(errorDirective(command.message));
+      return;
+    }
+    const argv = workspaceCommandUtilityArgv(command);
+    if (argv === null) {
+      emit(errorDirective("Invalid workspace command."));
+      return;
+    }
+    const [verb, ...tail] = argv;
+    const suffix = tail.length > 0 ? ` ${tail.map(shellArg).join(" ")}` : "";
     emit(printDirective(
-      `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${verb}${arg ? " " + arg : ""}\`, print its output verbatim, then stop.`,
+      `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${verb}${suffix}\`, print its output verbatim, then stop.`,
     ));
     return;
   }
@@ -2685,18 +2696,25 @@ function parseReportFlags(args: string[]): ReportFlags {
   return flags;
 }
 
-// Shell out to a sibling aidlc-state.ts subcommand. Resolves the tool relative
-// to this file so the engine and the tool it drives stay co-located. Returns
-// the child's exitCode + captured streams; a non-zero exitCode means
-// aidlc-state.ts rejected the transition via error() (which exits non-zero),
-// and the engine surfaces that as an error directive rather than a silent miss.
+// Run an aidlc-state.ts subcommand through the sibling source tool or the
+// compiled dispatcher's `state` noun. Returns the child's exitCode + captured
+// streams; a non-zero exitCode means aidlc-state.ts rejected the transition via
+// error() and the engine surfaces that as an error directive.
 function spawnState(
   projectDir: string,
   subArgs: string[],
 ): { exitCode: number; stdout: string; stderr: string } {
-  const toolPath = fileURLToPath(new URL("./aidlc-state.ts", import.meta.url));
+  const command = IS_COMPILED
+    ? [process.execPath, "state", ...subArgs, "--project-dir", projectDir]
+    : [
+        process.execPath,
+        fileURLToPath(new URL("./aidlc-state.ts", import.meta.url)),
+        ...subArgs,
+        "--project-dir",
+        projectDir,
+      ];
   const result = Bun.spawnSync({
-    cmd: ["bun", "run", toolPath, ...subArgs, "--project-dir", projectDir],
+    cmd: command,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -2724,8 +2742,27 @@ function spawnAuditAppend(
   for (const [k, v] of Object.entries(fields)) {
     fieldArgs.push("--field", `${k}=${v}`);
   }
+  const command = IS_COMPILED
+    ? [
+        process.execPath,
+        "audit",
+        "append",
+        eventType,
+        ...fieldArgs,
+        "--project-dir",
+        projectDir,
+      ]
+    : [
+        process.execPath,
+        auditTool,
+        "append",
+        eventType,
+        ...fieldArgs,
+        "--project-dir",
+        projectDir,
+      ];
   const result = Bun.spawnSync({
-    cmd: ["bun", "run", auditTool, "append", eventType, ...fieldArgs, "--project-dir", projectDir],
+    cmd: command,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -3264,8 +3301,8 @@ function handlePark(_args: string[], projectDir: string | undefined): void {
 
 // --- CLI entry point ---
 
-function main(): void {
-  const rawArgs = process.argv.slice(2);
+export function main(argv: string[]): void {
+  const rawArgs = argv;
 
   // Extract --project-dir (mirrors aidlc-jump.ts / aidlc-state.ts).
   let projectDir: string | undefined;
@@ -3304,7 +3341,7 @@ function main(): void {
 
 if (import.meta.main) {
   try {
-    main();
+    main(process.argv.slice(2));
   } catch (e) {
     // Any uncaught read error (missing graph, malformed state) surfaces as a
     // non-zero exit with the message on stderr — never a half-emitted

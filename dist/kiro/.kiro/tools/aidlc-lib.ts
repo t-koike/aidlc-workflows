@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { accessSync, appendFileSync, constants as fsConstants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { basename, dirname, join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  resolveHarnessPath,
+} from "./aidlc-runtime-paths.ts";
 // Type-only import for the lazy-loaded aidlc-graph.ts dependency. The
 // runtime require() below avoids the circular import (aidlc-graph.ts
 // imports loadScopeMapping/loadStageGraph from this file). Type-only
@@ -221,7 +224,7 @@ interface ShippedHarnessData {
 let _shippedHarnessData: ShippedHarnessData | null = null;
 
 export function harnessDataPath(): string {
-  return join(DATA_DIR, "harness.json");
+  return join(resolveDataDir(), "harness.json");
 }
 
 function readShippedHarnessData(): ShippedHarnessData {
@@ -305,19 +308,32 @@ export function rulesSubdir(): string {
 
 export function resolveProjectDir(explicitDir?: string): string {
   // 1. Explicit --project-dir argument
-  if (explicitDir) return explicitDir;
+  if (explicitDir) {
+    return isAbsolute(explicitDir) ? explicitDir : resolvePath(process.cwd(), explicitDir);
+  }
 
-  // 2. CLAUDE_PROJECT_DIR env var
-  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  // 2. Dispatcher/plugin explicit project environment
+  if (process.env.AIDLC_PROJECT_DIR) {
+    return isAbsolute(process.env.AIDLC_PROJECT_DIR)
+      ? process.env.AIDLC_PROJECT_DIR
+      : resolvePath(process.cwd(), process.env.AIDLC_PROJECT_DIR);
+  }
 
-  // 3. Script path derivation (open-set): this module ships at
+  // 3. CLAUDE_PROJECT_DIR env var
+  if (process.env.CLAUDE_PROJECT_DIR) {
+    return isAbsolute(process.env.CLAUDE_PROJECT_DIR)
+      ? process.env.CLAUDE_PROJECT_DIR
+      : resolvePath(process.cwd(), process.env.CLAUDE_PROJECT_DIR);
+  }
+
+  // 4. Script path derivation (open-set): this module ships at
   //    <project>/<harness>/tools/, so strip "<harness>/tools" for ANY harness
   //    dir name — the project root is the dir two levels up.
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const fromScript = stripHarnessLeaf(scriptDir, "tools");
   if (fromScript) return fromScript;
 
-  // 4. CWD has a known harness directory (dev repo).
+  // 5. CWD has a known harness directory (dev repo).
   const cwd = process.cwd();
   for (const h of KNOWN_HARNESS_DIRS) {
     if (existsSync(join(cwd, h))) {
@@ -343,16 +359,27 @@ function stripHarnessLeaf(dir: string, leaf: string): string | null {
 // --- Hook project dir resolution ---
 
 export function resolveProjectDirFromHook(importMetaUrl: string): string {
-  // 1. CLAUDE_PROJECT_DIR env var
-  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  // 1. Dispatcher/plugin explicit project environment
+  if (process.env.AIDLC_PROJECT_DIR) {
+    return isAbsolute(process.env.AIDLC_PROJECT_DIR)
+      ? process.env.AIDLC_PROJECT_DIR
+      : resolvePath(process.cwd(), process.env.AIDLC_PROJECT_DIR);
+  }
 
-  // 2. Script path derivation (open-set): hooks ship at
+  // 2. CLAUDE_PROJECT_DIR env var
+  if (process.env.CLAUDE_PROJECT_DIR) {
+    return isAbsolute(process.env.CLAUDE_PROJECT_DIR)
+      ? process.env.CLAUDE_PROJECT_DIR
+      : resolvePath(process.cwd(), process.env.CLAUDE_PROJECT_DIR);
+  }
+
+  // 3. Script path derivation (open-set): hooks ship at
   //    <project>/<harness>/hooks/, so strip "<harness>/hooks" for ANY harness.
   const scriptDir = dirname(fileURLToPath(importMetaUrl));
   const fromScript = stripHarnessLeaf(scriptDir, "hooks");
   if (fromScript) return fromScript;
 
-  // 3. CWD has a known harness directory (dev repo).
+  // 4. CWD has a known harness directory (dev repo).
   const cwd = process.cwd();
   for (const h of KNOWN_HARNESS_DIRS) {
     if (existsSync(join(cwd, h))) {
@@ -408,9 +435,10 @@ export const DEFAULT_SPACE = "default";
 //   - read-only utility flags: matched ANYWHERE in the args (mirrors the engine's
 //     parseNextFlags, which sets `readOnly` on any matching token). Each maps to
 //     its subcommand by stripping the leading `--` (--status→status, …).
-//   - workspace navigation verbs: matched ONLY as the LEADING token (i === 0), so
-//     freeform prose merely containing "space"/"intent" stays intent text. The
-//     optional <name> arg is args[1] when present and not itself a --flag.
+//   - workspace commands: parsed ONLY when the LEADING token is a workspace
+//     noun/legacy verb, so freeform prose merely containing "space"/"intent"
+//     stays intent text. A leading workspace noun wins over later read-only
+//     flags because those tokens belong to that command's argv.
 export const READ_ONLY_FLAGS: ReadonlySet<string> = new Set([
   "--status",
   "--help",
@@ -422,12 +450,216 @@ export const WORKSPACE_VERBS: ReadonlySet<string> = new Set([
   "space-create",
   "intent",
 ]);
-// Slugs a record (intent or space) may never take. "help" is grammar: the
-// router treats `intent help` / `space help` as a help request, so a record
-// with that slug would be unswitchable by name. Refusing it at the creation
-// chokepoints (birthIntent, handleSpaceCreate) keeps the namespace and the
-// grammar from ever colliding.
-export const RESERVED_RECORD_NAMES: ReadonlySet<string> = new Set(["help"]);
+
+export type WorkspaceNoun = "intent" | "space";
+
+export const INTENT_VERBS: ReadonlySet<string> = new Set([
+  "list",
+  "switch",
+  "birth",
+]);
+
+export const SPACE_VERBS: ReadonlySet<string> = new Set([
+  "list",
+  "switch",
+  "create",
+]);
+
+export const RESERVED_FUTURE: ReadonlySet<string> = new Set([
+  "archive",
+  "rename",
+  "show",
+]);
+
+export type WorkspaceCommand =
+  | { kind: "list"; noun: WorkspaceNoun; json: boolean }
+  | { kind: "switch"; noun: WorkspaceNoun; name: string; explicit: boolean }
+  | { kind: "create"; noun: "space"; name: string }
+  | { kind: "birth"; noun: "intent"; rest: string[] }
+  | { kind: "help"; noun: WorkspaceNoun }
+  | {
+      kind: "error";
+      noun: WorkspaceNoun;
+      code: "missing-name";
+      verb: "switch" | "create" | "space-create";
+      message: string;
+    }
+  | {
+      kind: "error";
+      noun: WorkspaceNoun;
+      code: "reserved-future-verb";
+      verb: string;
+      message: string;
+    }
+  | { kind: "not-workspace" };
+
+function missingWorkspaceName(
+  noun: WorkspaceNoun,
+  verb: "switch" | "create" | "space-create",
+): WorkspaceCommand {
+  const usage =
+    verb === "space-create"
+      ? "space-create <name>"
+      : `${noun} ${verb} <name>`;
+  return {
+    kind: "error",
+    noun,
+    code: "missing-name",
+    verb,
+    message: `Usage: aidlc ${usage}`,
+  };
+}
+
+function reservedFutureWorkspaceVerb(noun: WorkspaceNoun, verb: string): WorkspaceCommand {
+  return {
+    kind: "error",
+    noun,
+    code: "reserved-future-verb",
+    verb,
+    message: `${noun} ${verb} is reserved for a future workspace verb and is not implemented yet. Use ${noun} switch ${verb} to select an existing record with that name.`,
+  };
+}
+
+function isWorkspaceNoun(token: string | undefined): token is WorkspaceNoun {
+  return token === "intent" || token === "space";
+}
+
+function isReservedFutureWorkspaceVerb(token: string | undefined): token is string {
+  return token !== undefined && RESERVED_FUTURE.has(token);
+}
+
+function explicitWorkspaceList(noun: WorkspaceNoun, tokens: string[]): WorkspaceCommand {
+  return { kind: "list", noun, json: tokens[2] === "--json" };
+}
+
+export function parseWorkspaceCommand(tokens: string[]): WorkspaceCommand {
+  const head = tokens[0];
+
+  if (head === "space-create") {
+    const name = tokens[1];
+    if (name === undefined) return missingWorkspaceName("space", "space-create");
+    return { kind: "create", noun: "space", name };
+  }
+
+  if (!isWorkspaceNoun(head)) return { kind: "not-workspace" };
+
+  const noun = head;
+  const verbOrName = tokens[1];
+
+  if (verbOrName === undefined) {
+    return { kind: "list", noun, json: false };
+  }
+
+  if (verbOrName === "--json") {
+    return { kind: "list", noun, json: true };
+  }
+
+  if (verbOrName === "help" || verbOrName === "-h") {
+    return { kind: "help", noun };
+  }
+
+  if (isReservedFutureWorkspaceVerb(verbOrName)) {
+    return reservedFutureWorkspaceVerb(noun, verbOrName);
+  }
+
+  if (noun === "intent") {
+    if (verbOrName === "list") return explicitWorkspaceList(noun, tokens);
+    if (verbOrName === "switch") {
+      const name = tokens[2];
+      if (name === undefined) return missingWorkspaceName(noun, "switch");
+      return { kind: "switch", noun, name, explicit: true };
+    }
+    if (verbOrName === "birth") {
+      return { kind: "birth", noun, rest: tokens.slice(2) };
+    }
+  }
+
+  if (noun === "space") {
+    if (verbOrName === "list") return explicitWorkspaceList(noun, tokens);
+    if (verbOrName === "switch") {
+      const name = tokens[2];
+      if (name === undefined) return missingWorkspaceName(noun, "switch");
+      return { kind: "switch", noun, name, explicit: true };
+    }
+    if (verbOrName === "create") {
+      const name = tokens[2];
+      if (name === undefined) return missingWorkspaceName(noun, "create");
+      return { kind: "create", noun, name };
+    }
+  }
+
+  return { kind: "switch", noun, name: verbOrName, explicit: false };
+}
+
+export function workspaceCommandUtilityArgv(command: WorkspaceCommand): string[] | null {
+  switch (command.kind) {
+    case "list":
+      return command.json ? [command.noun, "--json"] : [command.noun];
+    case "switch":
+      // Explicit `switch <name>` must forward the literal "switch" token so
+      // the utility reads <name> as the switch target even when it shadows a
+      // verb (e.g. `intent switch birth` reaching a pre-existing intent named
+      // "birth" instead of re-reading "birth" as the birth verb). Bare-name
+      // sugar (`space teamB`, explicit: false) is unaffected by that bug and
+      // must keep the original 2-token shape: the utility's bare
+      // `[noun, name]` form IS the switch (see handleIntent/handleSpace's
+      // "verbOrTarget = name when not a recognized verb" branch), and every
+      // downstream consumer (the classifier's terminal print, the Kiro
+      // adapter, t114/t178/t198) pins that shape as still-desired behavior.
+      return command.explicit
+        ? [command.noun, "switch", command.name]
+        : [command.noun, command.name];
+    case "create":
+      return ["space-create", command.name];
+    case "birth":
+      return ["intent-birth", ...command.rest];
+    case "help":
+      return ["help"];
+    case "error":
+    case "not-workspace":
+      return null;
+  }
+}
+
+export function splitDoubleQuotedArgs(raw: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === "\\" && raw[i + 1] === "\"") {
+      current += "\"";
+      i++;
+      continue;
+    }
+    if (ch === "\"") {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (!inQuotes && /\s/.test(ch)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+}
+
+export const RESERVED_RECORD_NAME_LIST = Object.freeze(
+  [...new Set(["help", ...INTENT_VERBS, ...SPACE_VERBS, ...RESERVED_FUTURE])],
+);
+
+// Slugs a record (intent or space) may never take. These names are grammar:
+// help, current workspace verbs, and reserved future verbs all change how the
+// router reads `intent <token>` / `space <token>`. Refusing them at the
+// creation chokepoints keeps new records reachable. Pre-existing records with
+// these names remain reachable via explicit `switch`; doctor flags them as an
+// advisory so humans can rename them deliberately.
+export const RESERVED_RECORD_NAMES: ReadonlySet<string> = new Set(RESERVED_RECORD_NAME_LIST);
 
 // A classified terminal command: the aidlc-utility.ts subcommand to run, plus an
 // optional positional arg (the <name> for a workspace verb). `source` records
@@ -435,7 +667,39 @@ export const RESERVED_RECORD_NAMES: ReadonlySet<string> = new Set(["help"]);
 export interface TerminalCommand {
   subcommand: string;
   arg?: string;
+  args?: string[];
+  error?: string;
+  display?: string;
   source: "read-only-flag" | "workspace-verb";
+}
+
+function terminalCommandFromWorkspaceCommand(
+  command: WorkspaceCommand,
+  originalArgs: string[],
+): TerminalCommand | null {
+  if (command.kind === "not-workspace") return null;
+  if (command.kind === "help") {
+    return { subcommand: "help", source: "read-only-flag" };
+  }
+  if (command.kind === "error") {
+    return {
+      subcommand: "error",
+      error: command.message,
+      display: originalArgs.join(" "),
+      source: "workspace-verb",
+    };
+  }
+  const argv = workspaceCommandUtilityArgv(command);
+  if (argv === null) return null;
+  const [subcommand, ...tail] = argv;
+  const terminal: TerminalCommand = { subcommand, source: "workspace-verb" };
+  if (tail.length === 1 && !tail[0].startsWith("--")) {
+    terminal.arg = tail[0];
+  }
+  if (tail.length > 1 || (tail.length === 1 && tail[0].startsWith("--"))) {
+    terminal.args = tail;
+  }
+  return terminal;
 }
 
 // Classify the post-`/aidlc` argument tokens. Returns the terminal command to run
@@ -453,30 +717,214 @@ export function classifyTerminalCommand(args: string[]): TerminalCommand | null 
   if (args.length === 1 && (args[0] === "help" || args[0] === "-h")) {
     return { subcommand: "help", source: "read-only-flag" };
   }
+  // Leading workspace nouns own the command. Any later read-only-looking token
+  // is part of that workspace command's argv, not a mode switch, because the
+  // public grammar promises leading-token semantics.
+  const workspaceCommand = parseWorkspaceCommand(args);
+  if (workspaceCommand.kind !== "not-workspace") {
+    return terminalCommandFromWorkspaceCommand(workspaceCommand, args);
+  }
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (READ_ONLY_FLAGS.has(a)) {
       return { subcommand: a.replace(/^--/, ""), source: "read-only-flag" };
     }
-    if (i === 0 && WORKSPACE_VERBS.has(a)) {
-      const next = args[i + 1];
-      const arg = next !== undefined && !next.startsWith("--") ? next : undefined;
-      // `intent help`/`-h` / `space help`/`-h` is a help request, not a switch
-      // to a record named "help" (no per-verb help exists; the failed switch's
-      // error text steers the conductor into birthing an intent, and "help" is
-      // a reserved record name - see RESERVED_RECORD_NAMES). Mirrors
-      // parseNextFlags. space-create is excluded: its handler refuses a
-      // help-shaped name itself rather than silently printing help (the
-      // reserved-name guard alone would miss "-h", which slugifies to "h").
-      if ((a === "intent" || a === "space") && (arg === "help" || arg === "-h")) {
-        return { subcommand: "help", source: "read-only-flag" };
-      }
-      return arg !== undefined
-        ? { subcommand: a, arg, source: "workspace-verb" }
-        : { subcommand: a, source: "workspace-verb" };
-    }
   }
   return null;
+}
+
+// --- Engine command detectors (hook classifier seam) ---
+//
+// These raw command-string classifiers are shared by hooks and tests. They do
+// not attempt shell parsing: English-prose mentions and quoted echoes of command
+// strings match, which is a pre-existing class shared with the old detectors.
+// That direction fails closed: over-detection nudges, never releases.
+
+// A workflow-engine tool call: a Bash invocation of legacy
+// aidlc-orchestrate/aidlc-state, a new-grammar `aidlc ...` engine command, or a
+// tool whose name itself references aidlc. These are the calls that mean "the
+// conductor engaged the workflow this turn"; their presence in the turn that
+// answered the human disqualifies the turn from the conversational carve-out (a
+// conductor that ran the engine and then quit mid-loop must still be nudged).
+export function isEngineToolCall(name: string, input: unknown): boolean {
+  const cmd =
+    input !== null && typeof input === "object"
+      ? String((input as Record<string, unknown>).command ?? "")
+      : "";
+  // The command text to inspect: a Bash/Shell command, or (for harnesses that
+  // surface the tool by name) the tool name itself.
+  const text = /^(bash|shell|execute_bash)$/i.test(name) ? cmd : name;
+  // Fast reject: no AIDLC engine/state/workspace tool named at all -> not a
+  // workflow engagement (a chat turn that ran git/cat/ls etc.).
+  if (
+    !/aidlc-(orchestrate|state|jump|bolt|swarm)\b/.test(text) &&
+    !/\baidlc\s+(?:next|report|park|orchestrate|state|jump|bolt|swarm)\b/.test(text)
+  ) {
+    return false;
+  }
+  // Split on shell separators so a CHAINED command is judged per sub-command,
+  // not as one blob. Otherwise a read-only flag anywhere in the line
+  // (`... --status && aidlc-orchestrate report ...`) would wrongly exempt a
+  // mutating call elsewhere in the same line. Each segment is judged on its own.
+  const segments = text.split(/&&|\|\||[;|\n]/);
+  for (const seg of segments) {
+    if (isEngineEngagementSegment(seg)) return true;
+  }
+  return false;
+}
+
+// Current legacy-shape engagement rules. Kept as a helper so the exported
+// classifier can preserve every old-shape result while adding the new grammar.
+function legacyEngineEngagementSegment(seg: string): boolean {
+  if (!/aidlc-(orchestrate|state|jump|bolt|swarm)\b/.test(seg)) return false;
+  // A PURE read-only query: a read-only flag present AND no mutating/advancing
+  // verb in the SAME segment. `next --status` is read-only; `report --status`
+  // (nonsensical, but) still has `report` so is engagement.
+  const hasReadOnlyFlag = /--status\b|--doctor\b|--help\b|--version\b/.test(seg);
+  if (/aidlc-orchestrate\b/.test(seg)) {
+    const advances = /\bnext\b|\breport\b/.test(seg);
+    if (!advances) return false; // e.g. an orchestrate invocation with only a read-only flag
+    // `next --status` is the read-only status query; a bare `next` (or any
+    // `report`) advances. So: advancing verb present -> engagement UNLESS the
+    // ONLY advancing token is `next` and it carries a read-only flag.
+    if (hasReadOnlyFlag && /\bnext\b/.test(seg) && !/\breport\b/.test(seg)) return false;
+    return true;
+  }
+  if (/aidlc-state\b/.test(seg)) {
+    // The mutating / completing subcommands. (Read-only aidlc-state reads like
+    // `get`/`show` are not here, so they fall through to non-engagement.)
+    return /\b(approve|advance|finalize|complete-workflow|gate-start|checkbox|park|unpark|set|skip|reject|revise|resume)\b/.test(seg);
+  }
+  // aidlc-jump / aidlc-bolt / aidlc-swarm: a read-only query (--help/--status)
+  // is not engagement; anything else mutates (jump moves the pointer, bolt forks/
+  // merges, swarm runs Construction) so counts as engagement.
+  if (hasReadOnlyFlag) return false;
+  return true;
+}
+
+// One shell sub-command. True when it ENGAGES the forwarding loop or MUTATES
+// workflow state, false for a read-only query. A human chatting may legitimately
+// ask "what stage am I on?" answered with `--status` / `next --status` /
+// `--doctor` / `--help` / `--version` or a read-only utility call: those must
+// NOT disqualify the conversational carve-out. Anything that advances the loop
+// (`next` fetching a directive, `report` committing a transition) or mutates
+// state (aidlc-state completing/transition verbs; a checkbox/jump/bolt/swarm
+// move) DOES count as engagement. Fail-toward-engagement: an aidlc-orchestrate/
+// state/jump/bolt/swarm verb we do not specifically recognise is treated as
+// engagement (BLOCK), so an unrecognised mutating verb can never leak through as
+// "chat" - the conservative direction for loop integrity.
+export function isEngineEngagementSegment(seg: string): boolean {
+  if (
+    /aidlc-(orchestrate|state|jump|bolt|swarm)\b/.test(seg) &&
+    legacyEngineEngagementSegment(seg)
+  ) {
+    return true;
+  }
+
+  if (!/\baidlc\s+(?:next|report|park|orchestrate|state|jump|bolt|swarm)\b/.test(seg)) {
+    return false;
+  }
+
+  const hasReadOnlyFlag = /--status\b|--doctor\b|--help\b|--version\b/.test(seg);
+  const hasTopNext = /\baidlc\s+next\b/.test(seg);
+  const hasTopReport = /\baidlc\s+report\b/.test(seg);
+  const hasTopPark = /\baidlc\s+park\b/.test(seg);
+  const hasNounNext = /\baidlc\s+orchestrate\s+next\b/.test(seg);
+  const hasNounReport = /\baidlc\s+orchestrate\s+report\b/.test(seg);
+  const hasNounPark = /\baidlc\s+orchestrate\s+park\b/.test(seg);
+  const hasOrchestrateNoun = /\baidlc\s+orchestrate\b/.test(seg);
+  const hasNext = hasTopNext || hasNounNext;
+  const hasReport = hasTopReport || hasNounReport;
+  const hasPark = hasTopPark || hasNounPark;
+
+  if (hasNext || hasReport || hasPark || hasOrchestrateNoun) {
+    // Deliberate grammar delta: new-shape `aidlc park` counts as engagement.
+    // The old orchestrate branch did not count `aidlc-orchestrate.ts park`
+    // because legacy orchestrate engagement recognized only next/report.
+    if (!hasNext && !hasReport && !hasPark) return false;
+    if (hasReadOnlyFlag && hasNext && !hasReport && !hasPark) return false;
+    return true;
+  }
+
+  if (/\baidlc\s+state\b/.test(seg)) {
+    return /\b(approve|advance|finalize|complete-workflow|gate-start|checkbox|park|unpark|set|set-status|skip|reject|revise|resume|init)\b/.test(seg);
+  }
+
+  if (/\baidlc\s+(?:jump|bolt|swarm)\b/.test(seg)) {
+    if (hasReadOnlyFlag) return false;
+    return true;
+  }
+
+  return false;
+}
+
+function shellCommandSegments(command: string): string[] {
+  const segments: string[] = [];
+  let start = 0;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+
+    const separatorWidth =
+      char === "&" && command[i + 1] === "&"
+        ? 2
+        : char === "|" || char === ";" || char === "\n" ? 1 : 0;
+    if (separatorWidth === 0) continue;
+    segments.push(command.slice(start, i));
+    i += separatorWidth - 1;
+    start = i + 1;
+  }
+
+  segments.push(command.slice(start));
+  return segments;
+}
+
+// Classify commands for the runtime-compile hook's cheap PostToolUse gate.
+// Transition matching stays intentionally lexical, but the recursion guard
+// only examines real unquoted shell-command segments.
+export function classifyRuntimeCompileCommand(
+  command: string,
+): "reject" | "fire" | "pass" {
+  const invokesRuntime = shellCommandSegments(command)
+    .some((segment) => /^\s*aidlc\s+runtime\b/.test(segment));
+  if (
+    /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-runtime\.ts\b/.test(command) ||
+    invokesRuntime
+  ) {
+    return "reject";
+  }
+  if (
+    /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-(state|jump|bolt|utility)\.ts\b/.test(command) ||
+    /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-orchestrate\.ts\b.*\breport\b/.test(command) ||
+    /\baidlc\s+(?:state|jump|bolt)\b|\baidlc\s+(?:status|doctor|version|help)\b|\baidlc\s+scope\s+change\b|\baidlc\s+config\s+set\b/.test(command) ||
+    /\baidlc\s+report\b|\baidlc\s+orchestrate\s+report\b|\baidlc\s+next\b.*\breport\b/.test(command)
+  ) {
+    // Utility split rationale: the new grammar keeps D2 parity for the public
+    // one-shots (status/doctor/version/help fire, because the old regex catches
+    // ANY aidlc-utility.ts call), but deliberately does NOT fire for the new
+    // workspace/gen/sensor/intent/space nouns. Old-shape utility calls keep
+    // firing via the retained old regex.
+    return "fire";
+  }
+  return "pass";
 }
 
 // `aidlc/` — the harness-neutral workspace roof (memory · codekb · knowledge ·
@@ -3004,7 +3452,9 @@ export function latestStartedStageSlug(audit: string): string | null {
 
 // --- Data loaders ---
 
-const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "data");
+function resolveDataDir(): string {
+  return resolveHarnessPath(["tools", "data"]);
+}
 
 let _stageGraph: StageEntry[] | null = null;
 let _stageGraphAll: StageEntry[] | null = null;
@@ -3015,14 +3465,14 @@ let _scopeMapping: Record<string, ScopeDefinition> | null = null;
 // while still sharing a process in rare cases. AIDLC_STAGE_GRAPH pattern
 // matches AIDLC_PROJECT_DIR in resolveProjectDir() above.
 function stageGraphPath(): string {
-  return process.env.AIDLC_STAGE_GRAPH ?? join(DATA_DIR, "stage-graph.json");
+  return process.env.AIDLC_STAGE_GRAPH ?? join(resolveDataDir(), "stage-graph.json");
 }
 
 // Exported so the read-only `detect` verb can TELL the composer agent where
 // the runtime scope registry lives (the paths are module-relative to the
 // installed tool, which a prose agent cannot derive itself).
 export function scopeGridPath(): string {
-  return process.env.AIDLC_SCOPE_GRID ?? join(DATA_DIR, "scope-grid.json");
+  return process.env.AIDLC_SCOPE_GRID ?? join(resolveDataDir(), "scope-grid.json");
 }
 
 // scope-mapping.json is retired. It survives ONLY as a test
@@ -3042,7 +3492,8 @@ function scopeMappingPath(): string | null {
 // Exported for the same reason as scopeGridPath: `detect --json` prints it so
 // the composer agent is told the authoritative write target per harness.
 export function scopesDir(): string {
-  return process.env.AIDLC_SCOPES_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "..", "scopes");
+  return process.env.AIDLC_SCOPES_DIR
+    ?? resolveHarnessPath(["scopes"]);
 }
 
 export function loadStageGraph(): StageEntry[] {
@@ -3360,7 +3811,8 @@ export interface AgentMetadata {
 // the agent-metadata loader at an isolated tree. Evaluated at call time so
 // tests that set/unset mid-process see the change.
 export function agentsDir(): string {
-  return process.env.AIDLC_AGENTS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "..", "agents");
+  return process.env.AIDLC_AGENTS_DIR
+    ?? resolveHarnessPath(["agents"]);
 }
 
 let _agents: AgentMetadata[] | null = null;

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, join } from "node:path";
 import {
   loadStageGraph,
   PHASES,
   parseStageFrontmatter,
 } from "./aidlc-lib.ts";
+import { resolveHarnessPath } from "./aidlc-runtime-paths.ts";
 
 // --- Types ---
 
@@ -24,15 +24,8 @@ interface PhaseResult {
 
 // --- Stage file resolution ---
 
-const STAGES_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "aidlc-common",
-  "stages"
-);
-
 function findStageFile(slug: string, phase: string): string | null {
-  const path = join(STAGES_DIR, phase, `${slug}.md`);
+  const path = join(resolveHarnessPath(["aidlc-common", "stages"]), phase, `${slug}.md`);
   return existsSync(path) ? path : null;
 }
 
@@ -278,8 +271,8 @@ function jsonError(message: string): never {
 
 // --- CLI entry point ---
 
-function main(): void {
-  const args = process.argv.slice(2);
+export function main(argv: string[]): void {
+  const args = argv;
   const subcommand = args[0];
   const target = args[1];
 
@@ -302,4 +295,6 @@ function main(): void {
   }
 }
 
-main();
+if (import.meta.main) {
+  main(process.argv.slice(2));
+}

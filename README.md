@@ -8,7 +8,7 @@ A native implementation of the **AI-DLC methodology** (AI-Driven Development Lif
 
 The methodology lives once, in a harness-neutral `core/`; each harness adds a thin surface that decides how it shows up on that harness. So you edit the methodology in one place, and every harness distribution is generated from it — no harness gets special treatment. (See [Repository layout](#repository-layout) for how the pieces fit together.)
 
-![version](https://img.shields.io/badge/version-2.4.4-blue)
+![version](https://img.shields.io/badge/version-2.4.5-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![Kiro IDE](https://img.shields.io/badge/harness-Kiro%20IDE-orange)
 ![Kiro CLI](https://img.shields.io/badge/harness-Kiro%20CLI-orange)
@@ -259,6 +259,7 @@ aidlc-claude/
 ├── scripts/
 │   ├── package.ts              # THE build entry: copy core+harness per manifest → graph compile →
 │   │                           #   runner-gen → emit() per tree.  --check = total drift guard (CI)
+│   ├── build-binaries.ts       # release-only CLI bundles under ignored build/
 │   └── manifest-types.ts       # shared manifest contract
 │
 │  ─────────── GENERATED, COMMITTED, DRIFT-GUARDED — never hand-edit ───────────
@@ -287,6 +288,17 @@ bun scripts/package.ts            # regenerate every dist/<harness>/ from core/ 
 bun scripts/package.ts <name>     # regenerate one harness (e.g. claude, kiro-ide, codex)
 bun scripts/package.ts --check    # byte-parity drift guard (run in CI)
 ```
+
+Release binary artifacts are built separately after the drift guard is clean:
+
+```bash
+bun scripts/build-binaries.ts                 # native binary + mandatory smoke gates
+bun scripts/build-binaries.ts --all-targets   # release matrix
+```
+
+Each target is emitted under `build/binaries/<target>/` with the executable
+and a `runtime/<harness>/` copy of every generated harness distribution it may
+dispatch into.
 
 Adding a whole new harness? See [Porting to a New Harness](docs/harness-engineering/09-porting-to-a-new-harness.md). The authoritative build reference is the [Contributing Guide](docs/reference/11-contributing.md#development-workflow).
 

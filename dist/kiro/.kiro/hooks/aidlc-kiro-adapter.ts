@@ -29,7 +29,7 @@
 //                  pretool-block | reviewer-scope
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   classifyTerminalCommand,
@@ -37,12 +37,12 @@ import {
   humanActedSinceGate,
   humanPresenceGuardDisabled,
   isAutonomousMode,
+  splitDoubleQuotedArgs,
   stateFilePath,
 } from "../tools/aidlc-lib.ts";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
 
 const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
-const target = process.argv[2] ?? "";
 
 interface KiroHookInput {
   hook_event_name?: string;
@@ -55,15 +55,33 @@ interface KiroHookInput {
   assistant_response?: string;
 }
 
+export async function run(
+  target: string,
+  input: string,
+  extraArgs: string[] = [],
+): Promise<number> {
 let kiro: KiroHookInput = {};
 if (!process.stdin.isTTY) {
   try {
-    const text = await Bun.stdin.text();
-    if (text.length > 0) kiro = JSON.parse(text) as KiroHookInput;
+    if (input.length > 0) kiro = JSON.parse(input) as KiroHookInput;
   } catch {
-    process.exit(0); // malformed stdin — advisory hooks fail open
+    return 0; // malformed stdin — advisory hooks fail open
   }
 }
+
+const projectDirRaw =
+  process.env.AIDLC_PROJECT_DIR ?? kiro.cwd ?? process.cwd();
+const projectDir = isAbsolute(projectDirRaw)
+  ? projectDirRaw
+  : resolve(process.cwd(), projectDirRaw);
+const projectEnv = process.env.AIDLC_PROJECT_DIR
+  ? {
+      ...process.env,
+      AIDLC_PROJECT_DIR: projectDir,
+      CLAUDE_PROJECT_DIR: projectDir,
+    }
+  : process.env;
+const childCwd = process.env.AIDLC_PROJECT_DIR ? projectDir : process.cwd();
 
 // --- verb-intercept: the deterministic terminal-command seam (userPromptSubmit) ---
 //
@@ -93,7 +111,7 @@ function extractNextArgs(expandedPrompt: string): string[] {
   // inside a markdown code span, so the args end at the backtick.
   const m = expandedPrompt.match(/aidlc-orchestrate\.ts next ([^`\n]*)`/);
   if (!m) return [];
-  return m[1].trim().split(/\s+/).filter((t) => t.length > 0);
+  return splitDoubleQuotedArgs(m[1].trim());
 }
 
 if (target === "verb-intercept") {
@@ -110,7 +128,7 @@ if (target === "verb-intercept") {
   // turn-scoped, no time window, no wedge. Best-effort; failure fails open.
   let turn = 0;
   try {
-    const cwd = kiro.cwd ?? process.cwd();
+    const cwd = projectDir;
     mkdirSync(join(cwd, "aidlc"), { recursive: true });
     const cp = join(cwd, "aidlc", ".aidlc-turn-counter");
     turn = existsSync(cp)
@@ -127,20 +145,34 @@ if (target === "verb-intercept") {
   // workflow state existing (same self-gate as the core mint hook) so a prompt in
   // a project that never ran the framework does not scaffold audit shards.
   try {
-    const cwd = kiro.cwd ?? process.cwd();
+    const cwd = projectDir;
     if (existsSync(stateFilePath(cwd))) {
       appendAuditEntry("HUMAN_TURN", {}, cwd);
     }
   } catch { /* presence best-effort - mint never blocks the turn */ }
-  if (cmd === null) process.exit(0); // not a terminal command — conductor handles it
+  if (cmd === null) return 0; // not a terminal command — conductor handles it
 
-  const cwd = kiro.cwd ?? process.cwd();
-  const utilArgs = [join(".kiro", "tools", "aidlc-utility.ts"), cmd.subcommand];
-  if (cmd.arg !== undefined) utilArgs.push(cmd.arg);
-  // Reuse the exact bun binary running this adapter; the child must not depend on
-  // PATH containing bun (the hook environment often lacks the bun install dir).
-  const run = Bun.spawnSync([process.execPath, ...utilArgs], { cwd, stdout: "pipe", stderr: "pipe" });
-  const out = ((run.stdout?.toString() ?? "") + (run.stderr?.toString() ?? "")).trim();
+  const cwd = projectDir;
+  const forwarded = cmd.args ?? (cmd.arg !== undefined ? [cmd.arg] : []);
+  let out: string;
+  if (cmd.error !== undefined) {
+    out = cmd.error;
+  } else {
+    const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+    const compiledArgs = (() => {
+      if (cmd.subcommand === "space-create") return ["space", "create", ...forwarded];
+      if (cmd.subcommand === "intent-birth") return ["intent", "birth", ...forwarded];
+      return [cmd.subcommand, ...forwarded];
+    })();
+    const utilArgs = [join(".kiro", "tools", "aidlc-utility.ts"), cmd.subcommand, ...forwarded];
+    // Reuse the exact bun binary running this adapter; the child must not depend on
+    // PATH containing bun (the hook environment often lacks the bun install dir).
+    const run = Bun.spawnSync(
+      executable ? [executable, ...compiledArgs] : [process.execPath, ...utilArgs],
+      { cwd, stdout: "pipe", stderr: "pipe", env: projectEnv },
+    );
+    out = ((run.stdout?.toString() ?? "") + (run.stderr?.toString() ?? "")).trim();
+  }
 
   // Turn-scoped latch: a terminal command was handled OFF-BAND this turn (the
   // seam ran the tool; the conductor only relays). Stamp the latch with the
@@ -151,11 +183,11 @@ if (target === "verb-intercept") {
   // catches the read-only AND the nav roll-forward. Best-effort; fails open.
   if (cmd.source === "read-only-flag" || cmd.source === "workspace-verb") {
     try {
-      const cwd = kiro.cwd ?? process.cwd();
+      const cwd = projectDir;
       mkdirSync(join(cwd, "aidlc"), { recursive: true });
       const flag = cmd.source === "read-only-flag"
         ? cmd.subcommand
-        : (cmd.arg ? cmd.subcommand + " " + cmd.arg : cmd.subcommand);
+        : (cmd.display ?? [cmd.subcommand, ...forwarded].join(" "));
       writeFileSync(
         join(cwd, "aidlc", ".aidlc-readonly-latch"),
         JSON.stringify({ turn, flag, source: cmd.source, ts: Date.now() }) + "\n",
@@ -167,11 +199,11 @@ if (target === "verb-intercept") {
   // short-circuit message is legible.
   const typed = cmd.source === "read-only-flag"
     ? `--${cmd.subcommand}`
-    : `${cmd.subcommand}${cmd.arg ? " " + cmd.arg : ""}`;
+    : (cmd.display ?? [cmd.subcommand, ...forwarded].join(" "));
   process.stdout.write(
     `SYSTEM (deterministic harness dispatch): The command \`/aidlc ${typed}\` has ALREADY been run by the harness — it is a read-only/navigation command that carries NO workflow work. Its verbatim output is below. Your ONLY action this turn: relay that output to the user, then STOP. Do NOT run \`aidlc-orchestrate.ts next\`. Do NOT advance, resume, or run any workflow stage.\n\n--- OUTPUT ---\n${out}\n--- END OUTPUT ---\n`,
   );
-  process.exit(0);
+  return 0;
 }
 
 // --- pretool-block: the preToolUse roll-forward backstop (matcher: execute_bash) ---
@@ -191,9 +223,9 @@ if (target === "verb-intercept") {
 // parse/read failure exits 0 and never blocks a real next.
 if (target === "pretool-block") {
   const cmdStr = String(kiro.tool_input?.command ?? "");
-  const cwd = kiro.cwd ?? process.cwd();
+  const cwd = projectDir;
   const m = cmdStr.match(/aidlc-orchestrate\.ts\s+next\b([^\n]*)/);
-  const nextArgs = m ? m[1].trim().split(/\s+/).filter((t) => t.length > 0) : [];
+  const nextArgs = m ? splitDoubleQuotedArgs(m[1].trim()) : [];
   // A next carrying ANY advancing/config flag is a DELIBERATE move — only a truly
   // bare next is the spurious roll-forward. Mirrors the engine done-guard's
   // exemptions (the engine doesn't parse --init/--force — retired P4 — so listing
@@ -231,7 +263,7 @@ if (target === "pretool-block") {
     process.stderr.write(
       "read-only/navigation command already handled this turn by the deterministic harness — do not advance the workflow. The output was already relayed; end the turn.\n",
     );
-    process.exit(2); // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
+    return 2; // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
   }
 
   // --- human-presence floor (second exit-2 branch) ---
@@ -251,19 +283,19 @@ if (target === "pretool-block") {
     const content = existsSync(stateFilePath(cwd))
       ? readFileSync(stateFilePath(cwd), "utf-8")
       : null;
-    if (isAutonomousMode(content)) process.exit(0); // autonomous: never block
-    if (humanPresenceGuardDisabled()) process.exit(0); // deterministic off-switch
-    if (!hasOpenGate(content)) process.exit(0); // no gate awaits approval
+    if (isAutonomousMode(content)) return 0; // autonomous: never block
+    if (humanPresenceGuardDisabled()) return 0; // deterministic off-switch
+    if (!hasOpenGate(content)) return 0; // no gate awaits approval
 
     if (!humanActedSinceGate(cwd)) {
       process.stderr.write(
         "an approval gate is open and no human has acted since it opened: refusing the tool call. A real human must respond at the gate. End the turn.\n",
       );
-      process.exit(2); // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
+      return 2; // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
     }
   } catch { /* fail open: advisory presence floor */ }
 
-  process.exit(0);
+  return 0;
 }
 
 // --- reviewer-scope: the per-unit reviewer read-scope bound (preToolUse) ---
@@ -272,8 +304,8 @@ if (target === "pretool-block") {
 // conductor's), so every call arriving through this registration is that
 // reviewer's - the scoping IS the agent identity on Kiro, whose hook
 // payloads carry no agent_type. Each registration passes ITS OWN agent name
-// as argv[3] (`reviewer-scope <agent-name>`), which the shim forwards as
-// agent_type so the core hook still compares against the dispatch record's
+// as an extra argument (`reviewer-scope <agent-name>`), which the shim forwards
+// as agent_type so the core hook still compares against the dispatch record's
 // reviewer field - a stale record naming a DIFFERENT reviewer then fails
 // open exactly like on Claude/Codex, instead of scoping the wrong agent.
 // The shim normalizes the alias payload (shell -> Bash {command}; read ->
@@ -305,10 +337,14 @@ if (target === "reviewer-scope") {
     const wops = (ti.operations as Array<{ path?: string }>) ?? [];
     coreInput.paths = wops.map((o) => o.path ?? "").filter((p) => p.length > 0);
   } else {
-    process.exit(0);
+    return 0;
   }
-  const registeredAgent = process.argv[3] ?? "";
-  const r = Bun.spawnSync([process.execPath, join(HOOKS_DIR, "aidlc-reviewer-scope.ts")], {
+  const registeredAgent = extraArgs[0] ?? "";
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+  const command = executable
+    ? [executable, "hook", "reviewer-scope"]
+    : [process.execPath, join(HOOKS_DIR, "aidlc-reviewer-scope.ts")];
+  const r = Bun.spawnSync(command, {
     stdin: Buffer.from(
       JSON.stringify({
         hook_event_name: "PreToolUse",
@@ -320,16 +356,17 @@ if (target === "reviewer-scope") {
       }),
       "utf-8",
     ),
-    cwd: kiro.cwd ?? process.cwd(),
+    cwd: projectDir,
     stdout: "pipe",
     stderr: "pipe",
+    env: projectEnv,
   });
   const stderrText = r.stderr?.toString() ?? "";
   if (r.exitCode === 2) {
     process.stderr.write(stderrText);
-    process.exit(2); // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
+    return 2; // Kiro reject contract: exit 2 + stderr BLOCKS the tool call.
   }
-  process.exit(0);
+  return 0;
 }
 
 // Normalize Kiro's alias tool names to the canonical names the core hooks
@@ -446,18 +483,23 @@ function buildForward(): Forward {
 function runCore(hookFile: string, input: Record<string, unknown>): { stdout: string; code: number } {
   // Reuse the exact bun binary running this adapter; the child must not depend on
   // PATH containing bun (the hook environment often lacks the bun install dir).
-  const r = Bun.spawnSync([process.execPath, join(HOOKS_DIR, hookFile)], {
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+  const command = executable
+    ? [executable, "hook", hookFile.replace(/^aidlc-|\.ts$/g, "")]
+    : [process.execPath, join(HOOKS_DIR, hookFile)];
+  const r = Bun.spawnSync(command, {
     stdin: Buffer.from(JSON.stringify(input), "utf-8"),
     stdout: "pipe",
     stderr: "ignore",
+    cwd: childCwd,
+    env: projectEnv,
   });
   return { stdout: r.stdout?.toString() ?? "", code: r.exitCode ?? 0 };
 }
 
 const fwd = buildForward();
 if (fwd === null) {
-  process.exit(0);
-  throw new Error("unreachable"); // narrows fwd for TS below
+  return 0;
 }
 
 if (fwd.hook === "__audit_and_sensors__") {
@@ -465,7 +507,7 @@ if (fwd.hook === "__audit_and_sensors__") {
   // (mirrors the Claude settings.json registration). Both advisory: exit 0.
   runCore("aidlc-audit-logger.ts", fwd.input);
   runCore("aidlc-sensor-fire.ts", fwd.input);
-  process.exit(0);
+  return 0;
 }
 
 const result = runCore(fwd.hook, fwd.input);
@@ -481,10 +523,15 @@ if (target === "session-start") {
   } catch {
     if (result.stdout) process.stdout.write(result.stdout);
   }
-  process.exit(0);
+  return 0;
 }
 
 // stop (and any future passthrough target): forward stdout + exit code
 // verbatim — the {"decision":"block","reason"} contract is shared.
 if (result.stdout) process.stdout.write(result.stdout);
-process.exit(result.code);
+return result.code;
+}
+
+if (import.meta.main) {
+  process.exit(await run(process.argv[2] ?? "", await Bun.stdin.text(), process.argv.slice(3)));
+}

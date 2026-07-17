@@ -29,6 +29,7 @@ bun install --frozen-lockfile
 core/                # Hand-authored, harness-neutral source (tools, stages, agents, rules, knowledge, hooks)
 harness/<name>/      # Per-harness authored surfaces; claude/, kiro/, kiro-ide/, codex/
 scripts/package.ts   # The build: regenerates dist/<harness>/ from core/ + harness/ (`--check` drift-guards it)
+scripts/build-binaries.ts # Release-only compiled CLI artifacts in ignored build/binaries/ after package --check
 dist/<harness>/      # GENERATED: dist/claude/, dist/kiro/, dist/kiro-ide/, dist/codex/ — never hand-edit
 tests/               # All-TypeScript test suite (t*.test.ts, run via bun)
 docs/                # Documentation
@@ -47,6 +48,19 @@ For the full architecture, see [reference/01-architecture.md](01-architecture.md
 4. **Make changes** -- Edit the harness-neutral source in `core/` (tools, stages, agents, hooks, rules, knowledge) or a harness surface in `harness/<name>/` (the orchestrator skill, settings). Then run `bun scripts/package.ts` to regenerate `dist/` — never hand-edit `dist/`, the drift guard (`package.ts --check`) will fail CI
 5. **Test** -- Run `bun tests/run-tests.ts` before submitting
 6. **Submit** -- Open a PR against `main`
+
+Release binary artifacts are not part of `dist/` and are not produced by the
+packager. After `bun scripts/package.ts --check` is clean, run
+`bun scripts/build-binaries.ts` for the native artifact or add `--all-targets`
+for the release matrix. The script writes each executable under
+`build/binaries/<target>/`, stages complete generated distributions under that
+target's `runtime/<harness>/` directory, and writes `build-results.json` at
+`build/binaries/`. The native gates run sensors, graph compilation, validation,
+generated-surface checks, plugin selection/composition, orchestration,
+Bolt/Swarm composition, packaged-runtime immutability, hooks, statusline,
+adapters, and explicit project routing without a `bun` executable on `PATH`.
+The staged `runtime/<harness>/` trees are read-only fallbacks; mutating commands
+must target an installed project harness. Any failed gate fails the build.
 
 ## Testing
 
@@ -143,7 +157,7 @@ A scope is authored as a file (its identity) plus a per-stage membership tag. Th
 
 3. **Recompile + regenerate the scope-table** — `bun .claude/tools/aidlc-graph.ts compile` transposes the `scopes:` tags into `tools/data/scope-grid.json`. Then `bun .claude/tools/aidlc-utility.ts scope-table` prints the canonical Markdown region for SKILL.md's compiled scope table. Keep the region between the `<!-- BEGIN: compiled ... -->` / `<!-- END: compiled ... -->` markers generated, then run `bun .claude/tools/aidlc-graph.ts compile --check` and `bun .claude/tools/aidlc-utility.ts scope-table --check` to confirm exit 0 (no drift).
 
-4. **Verify the scope resolves** — `bun core/tools/aidlc-utility.ts init --scope hotfix --project-dir /tmp/scope-smoke` should succeed and produce a state file with `Scope: hotfix`.
+4. **Verify the scope resolves** - `bun core/tools/aidlc-utility.ts intent-birth --scope hotfix --project-dir /tmp/scope-smoke` should succeed and produce a state file with `Scope: hotfix`.
 
 5. **Verify `doctor` accepts it as an env default** — `AWS_AIDLC_DEFAULT_SCOPE=hotfix bun aidlc-utility.ts doctor` should report the env var as valid.
 

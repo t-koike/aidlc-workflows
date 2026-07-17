@@ -266,7 +266,7 @@ function makeProject(withState: boolean): string {
   tempDirs.push(proj);
   mkdirSync(join(proj, ".claude", "tools", "data"), { recursive: true });
   mkdirSync(join(proj, ".claude", "hooks"), { recursive: true });
-  for (const t of ["aidlc-runtime.ts", "aidlc-lib.ts", "aidlc-audit.ts"]) {
+  for (const t of ["aidlc-runtime.ts", "aidlc-lib.ts", "aidlc-runtime-paths.ts", "aidlc-audit.ts"]) {
     copyFileSync(join(SRC_TOOLS, t), join(proj, ".claude", "tools", t));
   }
   copyFileSync(
@@ -375,6 +375,55 @@ describe("t131 spine fires inside a workflow (mechanism cli — spawnSync)", () 
     const r = runHook(runtimeCompileHook(proj), proj, json);
     expect(r.status).toBe(0); // STRONGER: the .sh swallowed the exit code.
     expect(existsSync(graphPath(proj))).toBe(true);
+  }, 30000);
+
+  test("B2-twin: new-shape state approve -> runtime-compile emits runtime-graph.json", () => {
+    const proj = makeProject(true);
+    // Same seam as B2, using the new public grammar instead of the tool-file shape.
+    mkdirSync(seededAuditDir(proj), { recursive: true });
+    writeFileSync(pinnedShardPath(proj), TRANSITION_AUDIT, "utf-8");
+    const json = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: {
+        command: "aidlc state approve --stage requirements-analysis",
+      },
+    });
+    const r = runHook(runtimeCompileHook(proj), proj, json);
+    expect(r.status).toBe(0);
+    expect(existsSync(graphPath(proj))).toBe(true);
+  }, 30000);
+
+  test("report-after-gate: new-shape report -> runtime-compile emits runtime-graph.json", () => {
+    const proj = makeProject(true);
+    // Pins the new report allowlist path that mirrors aidlc-orchestrate.ts report.
+    mkdirSync(seededAuditDir(proj), { recursive: true });
+    writeFileSync(pinnedShardPath(proj), TRANSITION_AUDIT, "utf-8");
+    const json = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: {
+        command:
+          "aidlc report --stage requirements-analysis --result approved",
+      },
+    });
+    const r = runHook(runtimeCompileHook(proj), proj, json);
+    expect(r.status).toBe(0);
+    expect(existsSync(graphPath(proj))).toBe(true);
+  }, 30000);
+
+  test("recursion twin: new-shape runtime compile -> no runtime-graph.json", () => {
+    const proj = makeProject(true);
+    // Even with a transition in the audit tail, the command-level recursion guard wins.
+    mkdirSync(seededAuditDir(proj), { recursive: true });
+    writeFileSync(pinnedShardPath(proj), TRANSITION_AUDIT, "utf-8");
+    const json = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: {
+        command: "aidlc runtime compile",
+      },
+    });
+    const r = runHook(runtimeCompileHook(proj), proj, json);
+    expect(r.status).toBe(0);
+    expect(existsSync(graphPath(proj))).toBe(false);
   }, 30000);
 });
 

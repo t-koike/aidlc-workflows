@@ -27,6 +27,7 @@ import {
   activeIntent,
   activeSpace,
   auditShards,
+  classifyRuntimeCompileCommand,
   type ClaudeCodeHookInput,
   errorMessage,
   hookDebug,
@@ -40,38 +41,37 @@ import {
   harnessDir,
 } from "../tools/aidlc-lib.ts";
 
+export async function run(input: string): Promise<number> {
 const projectDir = resolveProjectDirFromHook(import.meta.url);
 hookDebug(projectDir, "runtime-compile", "invoked");
 
 // 1. TTY guard — exit cleanly when invoked outside a piped stdin context
 //    (interactive shell, test harness running under `bash -x`).
-if (process.stdin.isTTY) process.exit(0);
+if (process.stdin.isTTY) return 0;
 
 // 2. Stdin parse — read JSON payload from Claude Code; exit on malformed.
-const input = await Bun.stdin.text();
 let parsed: ClaudeCodeHookInput;
 try {
   const raw: unknown = JSON.parse(input);
-  if (!isClaudeCodeHookInput(raw)) process.exit(0);
+  if (!isClaudeCodeHookInput(raw)) return 0;
   parsed = raw;
 } catch {
-  process.exit(0);
+  return 0;
 }
 const command: string = parsed.tool_input?.command ?? "";
 
-// 3. Command filter — only dispatch on the audit-emit-side seam.
-//    aidlc-runtime.ts is rejected explicitly (recursion guard at the
-//    command level — a positive-only allowlist would let composites like
-//    `bun aidlc-runtime.ts compile && bun aidlc-state.ts approve` through
-//    and loop). aidlc-log.ts emits only chatty in-stage events
+// 3. Command filter - only dispatch on the audit-emit-side seam for both
+//    legacy tool-file commands and the new `aidlc ...` grammar.
+//    aidlc-runtime.ts / aidlc runtime is rejected explicitly (recursion guard
+//    at the command level - a positive-only allowlist would let composites like
+//    `bun aidlc-runtime.ts compile && bun aidlc-state.ts approve` through and
+//    loop). aidlc-log.ts emits only chatty in-stage events
 //    (DECISION_RECORDED / QUESTION_ANSWERED / ERROR_LOGGED), none
 //    transition-class. aidlc-worktree.ts emits only WORKTREE_* events.
 //    `aidlc-orchestrate.ts report` is included because the conductor calls it
 //    as the public transition surface; the state-tool emit happens in its
-//    subprocess, which PostToolUse cannot see as a separate Bash command.
-const aidlcTransitionTool = /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-(state|jump|bolt|utility)\.ts\b/;
-const aidlcOrchestrateReport = /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-orchestrate\.ts\b.*\breport\b/;
-const aidlcRuntimeRef = /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-runtime\.ts\b/;
+//    subprocess, which PostToolUse cannot see as a separate Bash command. The
+//    new report allowlist keeps that same public-transition surface.
 // IDE audit-tail mode: Kiro IDE does not surface the shell command, so the
 // command-based filter cannot run. The adapter sets source="ide-audit-sync" to
 // signal "skip the command filter and gate purely on the audit tail" (steps
@@ -80,10 +80,11 @@ const aidlcRuntimeRef = /\bbun\b.*\.(?:claude|kiro|codex)\/tools\/aidlc-runtime\
 const ideAuditMode = (parsed.tool_input?.source ?? "") === "ide-audit-sync";
 hookDebug(projectDir, "runtime-compile", "command-gate", { ideAuditMode, command: command.slice(0, 120) });
 if (!ideAuditMode) {
-  if (aidlcRuntimeRef.test(command)) process.exit(0);
-  if (!aidlcTransitionTool.test(command) && !aidlcOrchestrateReport.test(command)) {
+  const commandDecision = classifyRuntimeCompileCommand(command);
+  if (commandDecision === "reject") return 0;
+  if (commandDecision === "pass") {
     hookDebug(projectDir, "runtime-compile", "exit: command not a transition tool");
-    process.exit(0);
+    return 0;
   }
 }
 
@@ -100,7 +101,7 @@ const intent = activeIntent(projectDir, space) ?? undefined;
 const audit = readAllAuditShards(projectDir, intent, space).replace(/\r\n/g, "\n");
 if (audit.length === 0) {
   hookDebug(projectDir, "runtime-compile", "exit: audit empty");
-  process.exit(0);
+  return 0;
 }
 
 // 5. Heartbeat — doctor reads this file's mtime to detect silent-hook failure.
@@ -133,7 +134,7 @@ const hasTransition = last3.some((b) => transitionRegex.test(b));
 hookDebug(projectDir, "runtime-compile", "transition-gate", { hasTransition, last3count: last3.length });
 if (!hasTransition) {
   hookDebug(projectDir, "runtime-compile", "exit: no transition in audit tail");
-  process.exit(0);
+  return 0;
 }
 
 // 7b. Idempotency guard (IDE audit-tail mode only). On the CLI the command
@@ -163,7 +164,7 @@ if (ideAuditMode) {
         graphMtime,
         newestShard,
       });
-      process.exit(0);
+      return 0;
     }
   } catch {
     // runtime-graph.json absent (never compiled) → fall through and compile.
@@ -190,4 +191,10 @@ try {
   }
 } catch (e) {
   recordHookDrop(projectDir, "runtime-compile", errorMessage(e));
+}
+return 0;
+}
+
+if (import.meta.main) {
+  process.exit(await run(await Bun.stdin.text()));
 }

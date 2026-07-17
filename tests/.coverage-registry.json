@@ -20,23 +20,23 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 452,
+    "total": 468,
     "enumeratedByClass": {
-      "function": 231,
+      "function": 242,
       "audit": 72,
       "scope": 9,
       "stage": 32,
       "hook": 12,
-      "subcommand": 89,
+      "subcommand": 94,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 95,
+      "function": 98,
       "audit": 31,
       "scope": 9,
       "stage": 8,
-      "hook": 11,
-      "subcommand": 76,
+      "hook": 12,
+      "subcommand": 81,
       "render-surface": 7
     }
   },
@@ -1082,6 +1082,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:classifyRuntimeCompileCommand",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:classifyTerminalCommand",
       "minMechanism": "none",
       "coveredBy": [
@@ -1091,6 +1098,10 @@
         },
         {
           "file": "tests/unit/t198-compose-surfaces.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -1589,6 +1600,13 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:INTENT_VERBS",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:intentDirNameBase",
       "minMechanism": "none",
       "coveredBy": [],
@@ -1635,6 +1653,20 @@
     {
       "unitClass": "function",
       "unitId": "function:isClaudeCodeHookInput",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:isEngineEngagementSegment",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:isEngineToolCall",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -1887,6 +1919,13 @@
     {
       "unitClass": "function",
       "unitId": "function:loadStageGraphAll",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:main",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -2147,6 +2186,18 @@
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:parseWorkspaceCommand",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2417,12 +2468,30 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:RESERVED_FUTURE",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:RESERVED_RECORD_NAME_LIST",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:RESERVED_RECORD_NAMES",
       "minMechanism": "none",
       "coveredBy": [
         {
           "file": "tests/unit/t178-classify-terminal-command.test.ts",
           "mechanism": "none"
+        },
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -2715,10 +2784,29 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:SPACE_VERBS",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:spacesRoot",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "function",
+      "unitId": "function:splitDoubleQuotedArgs",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "function",
@@ -2985,6 +3073,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:workspaceCommandUtilityArgv",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:worktreeAuditFilePath",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3108,8 +3208,13 @@
       "unitClass": "hook",
       "unitId": "aidlc-mint-presence",
       "minMechanism": "none",
-      "coveredBy": [],
-      "status": "UNCOVERED"
+      "coveredBy": [
+        {
+          "file": "tests/unit/t228-hook-run-exports.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
     },
     {
       "unitClass": "hook",
@@ -3139,6 +3244,10 @@
         {
           "file": "tests/unit/t13-hook-input-robustness.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t226-detector-corpus.test.ts",
+          "mechanism": "none"
         }
       ],
       "status": "covered"
@@ -3207,6 +3316,10 @@
         {
           "file": "tests/unit/t184-stage-graph-drift.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t228-hook-run-exports.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -3235,6 +3348,14 @@
         {
           "file": "tests/unit/t168-statusline-orientation.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t228-hook-run-exports.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t230-dispatcher-routes.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -3262,6 +3383,14 @@
         },
         {
           "file": "tests/integration/t195-stop-hook-compose-carveout.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t226-detector-corpus.test.ts",
+          "mechanism": "none"
+        },
+        {
+          "file": "tests/unit/t228-hook-run-exports.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -3298,6 +3427,10 @@
         },
         {
           "file": "tests/unit/t13-hook-input-robustness.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t230-dispatcher-routes.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -4806,7 +4939,35 @@
           "mechanism": "sdk"
         },
         {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t27.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-utility config-get",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-utility config-list",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t231-handler-additions.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -4879,6 +5040,10 @@
         },
         {
           "file": "tests/unit/t223-naming-enforcement.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t238-build-binaries.test.ts",
           "mechanism": "cli"
         },
         {
@@ -4966,6 +5131,10 @@
           "mechanism": "cli"
         },
         {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        },
+        {
           "file": "tests/unit/t27.test.ts",
           "mechanism": "cli"
         }
@@ -4983,6 +5152,10 @@
         },
         {
           "file": "tests/integration/t165-intent-birth-p4.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -5039,6 +5212,34 @@
         },
         {
           "file": "tests/unit/t232-phase-progress-flip.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-utility plugin-list",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
+      "unitId": "aidlc-utility plugin-sync",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t238-build-binaries.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -5168,6 +5369,10 @@
         {
           "file": "tests/integration/t165-intent-birth-p4.test.ts",
           "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
+          "mechanism": "cli"
         }
       ],
       "status": "covered"
@@ -5195,6 +5400,10 @@
         },
         {
           "file": "tests/integration/t175-space-create-memory-isolation.test.ts",
+          "mechanism": "cli"
+        },
+        {
+          "file": "tests/unit/t229-workspace-parser.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -5245,9 +5454,25 @@
     },
     {
       "unitClass": "subcommand",
+      "unitId": "aidlc-utility upgrade",
+      "minMechanism": "cli",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t231-handler-additions.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "subcommand",
       "unitId": "aidlc-utility version",
       "minMechanism": "cli",
       "coveredBy": [
+        {
+          "file": "tests/unit/t238-build-binaries.test.ts",
+          "mechanism": "cli"
+        },
         {
           "file": "tests/unit/t68-version-changelog-sync.test.ts",
           "mechanism": "cli"
