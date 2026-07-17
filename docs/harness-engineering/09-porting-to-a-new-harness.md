@@ -70,8 +70,6 @@ Create `harness/<name>/manifest.ts` exporting a `HarnessManifest`
   seam reads — so a real install resolves the renamed dir with no hardcoded map.
   This is the seam that makes `rulesRename` purely manifest data: set it here and
   every layer (build prose, compiled paths, runtime) follows, with no `core/` edit.
-- `authoredExempt: RegExp[]` — files inside core-copied dirs that are authored,
-  not generated (skip the orphan scan), e.g. `^hooks/aidlc-<name>-adapter\.ts$`.
 - `skipRunnerGen` — set when the harness ships no `<harnessDir>/skills/` (Codex
   emits its skill tree to `.agents/skills/` via `emit`); the packager then skips
   the standard runner-gen step.
@@ -84,7 +82,7 @@ rename + `harnessFiles` (agent JSONs, adapter, the project-root AGENTS.md).
 
 Core hooks consume Claude-shaped stdin as the normal form. A new harness ships
 **one authored adapter** (`harness/<name>/hooks/aidlc-<name>-adapter.ts`,
-listed in `harnessFiles` + `authoredExempt`) that normalizes the harness's hook
+listed in `harnessFiles`) that normalizes the harness's hook
 payloads into that contract and subprocess-pipes to the shared core hook.
 Never split a core hook into logic+adapter — the core bodies stay byte-shared
 across all harnesses (the `--check` proves it: every `.ts` in a dist is
@@ -122,16 +120,19 @@ matching `agent_type`).
 Structural divergence a declarative row can't express is `emit.ts` — a plugin
 the manifest references that the packager calls with an `EmitContext`
 (`coreRoot`, `harnessRoot`, `distRoot`, `harnessDir`, `substituteToken`,
-`check`) and that returns the paths it wrote. Codex's is the worked example:
+`tierCap`). The emitter writes its outputs beneath `distRoot`. Codex's is the
+worked example:
 `config.toml`, `hooks.json`, the hook-trust pre-seed, the `AGENTS.md` merge, the
 agent-TOML transpositions, and the `.agents/skills/` tree (composed from
 `core/tools/aidlc-runner-gen.ts`'s exported render functions under
 `AIDLC_HARNESS_DIR`, never reimplemented). Harnesses whose surfaces are all
 authored files (Claude, Kiro) set `emit: null`.
 
-`emit` honors `ctx.check`: under `--check` it diffs its outputs and returns
-problems instead of writing, so the drift guard covers emit-owned files that
-live outside `<harnessDir>` (e.g. `.agents/skills/`, the root `AGENTS.md`).
+Under `--check`, the packager supplies a temporary `distRoot`, runs the same
+emitter, then compares the complete generated root with the committed
+distribution. Emit-owned files outside `<harnessDir>` (for example
+`.agents/skills/` and the root `AGENTS.md`) therefore participate in the same
+missing, differing, and orphan checks as declarative outputs.
 
 ## Step 4 — the one transform class
 

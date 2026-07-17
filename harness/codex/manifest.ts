@@ -53,11 +53,6 @@ const manifest: HarnessManifest = {
 
   rulesRename: "aidlc-rules",
 
-  // The codex adapter lives inside the core-copied hooks/ dir — exempt it from
-  // the orphan scan. (Agent TOMLs are emitted, not authored — they are part of
-  // emit's expected set, scanned by emit's own check.)
-  authoredExempt: [/^hooks\/aidlc-codex-[^/]+\.ts$/],
-
   // Skills go to .agents/skills/ via emit, not <harnessDir>/skills/ via runner-gen.
   skipRunnerGen: true,
 
