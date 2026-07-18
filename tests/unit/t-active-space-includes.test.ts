@@ -256,3 +256,126 @@ describe("t-active-space-includes: Codex config.toml AIDLC_RULES_DIR", () => {
     expect(readFileSync(join(root, ".codex", "config.toml"), "utf-8")).toBe(before);
   });
 });
+
+
+describe("t-active-space-includes: opencode opencode.json instructions glob", () => {
+  beforeEach(() => {
+    process.env.AIDLC_HARNESS_DIR = ".aidlc";
+  });
+
+  function setup(): string {
+    const root = freshRoot();
+    seedSpaces(root);
+    // The include lives at the PROJECT ROOT (opencode.json), not inside the
+    // engine dir - opencode reads it from the workspace root.
+    cpSync(distSurface("opencode", "opencode.json"), join(root, "opencode.json"));
+    return root;
+  }
+
+  test("re-points the instructions glob to the requested space; preserves skills.paths + permissions", () => {
+    const root = setup();
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual(["opencode.json"]);
+    const cfg = JSON.parse(readFileSync(join(root, "opencode.json"), "utf-8")) as {
+      instructions: string[];
+      skills: { paths: string[] };
+      permission: { bash: Record<string, string> };
+    };
+    expect(cfg.instructions).toContain("aidlc/spaces/teamB/memory/**/*.md");
+    expect(cfg.instructions).not.toContain("aidlc/spaces/default/memory/**/*.md");
+    // The load-bearing wiring beyond the pointer survives the rewrite.
+    expect(cfg.skills.paths).toContain(".aidlc/skills");
+    expect(cfg.permission.bash["bun .aidlc/tools/*"]).toBe("allow");
+  });
+
+  test("re-pointing to default (already shipped) is a byte-identical NO-OP", () => {
+    const root = setup();
+    const before = readFileSync(join(root, "opencode.json"), "utf-8");
+    const written = repointHarnessIncludes(root, "default");
+    expect(written).toEqual([]);
+    expect(readFileSync(join(root, "opencode.json"), "utf-8")).toBe(before);
+  });
+
+  test("falls back to opencode.jsonc and preserves comments plus trailing commas", () => {
+    const root = setup();
+    rmSync(join(root, "opencode.json"));
+    const before = `{
+  // Keep this project note.
+  // "instructions": ["aidlc/spaces/default/memory/**/*.md"],
+  "instructions": [
+    "docs/project.md",
+    "aidlc/spaces/default/memory/**/*.md",
+  ],
+  /* Keep this block comment too. */
+  "permission": {
+    "bash": {
+      "*": "ask",
+    },
+  },
+}
+`;
+    writeFileSync(join(root, "opencode.jsonc"), before, "utf-8");
+
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual(["opencode.jsonc"]);
+    const after = readFileSync(join(root, "opencode.jsonc"), "utf-8");
+    expect(after).toBe(
+      before.replaceAll(
+        "aidlc/spaces/default/memory/**/*.md",
+        "aidlc/spaces/teamB/memory/**/*.md",
+      ),
+    );
+  });
+
+  test("re-points both config filenames when both are present", () => {
+    const root = setup();
+    const jsonc = `{
+  "instructions": ["aidlc/spaces/default/memory/**/*.md"],
+}
+`;
+    writeFileSync(join(root, "opencode.jsonc"), jsonc, "utf-8");
+
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual(["opencode.json", "opencode.jsonc"]);
+    for (const name of ["opencode.json", "opencode.jsonc"]) {
+      const body = readFileSync(join(root, name), "utf-8");
+      expect(body).toContain("aidlc/spaces/teamB/memory/**/*.md");
+      expect(body).not.toContain("aidlc/spaces/default/memory/**/*.md");
+    }
+  });
+
+  test("re-points explicit inline and native agent memory references with the config", () => {
+    const root = setup();
+    const agents: string[] = [];
+    for (const base of [".aidlc", ".opencode"]) {
+      const dir = join(root, base, "agents");
+      mkdirSync(dir, { recursive: true });
+      const agent = join(dir, "aidlc-architect-agent.md");
+      cpSync(
+        distSurface("opencode", base, "agents", "aidlc-architect-agent.md"),
+        agent,
+      );
+      agents.push(agent);
+    }
+
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual([
+      "opencode.json",
+      ".aidlc/agents/aidlc-architect-agent.md",
+      ".opencode/agents/aidlc-architect-agent.md",
+    ]);
+    for (const agent of agents) {
+      const body = readFileSync(agent, "utf-8");
+      expect(body).toContain("aidlc/spaces/teamB/memory/");
+      expect(body).not.toContain("aidlc/spaces/default/memory/");
+    }
+  });
+
+  test("a malformed opencode.json is skipped, never corrupted", () => {
+    const root = setup();
+    writeFileSync(join(root, "opencode.json"), "{ not json");
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual([]);
+    expect(readFileSync(join(root, "opencode.json"), "utf-8")).toBe("{ not json");
+  });
+});

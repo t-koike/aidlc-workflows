@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.4.6] - 2026-07-17
+
+Adds a fifth harness distribution: **opencode** (opencode.ai, verified live on 1.17.18). `dist/opencode/` ships the same deterministic core as every other harness, projected for opencode's native surfaces: skills, subagents, a `/aidlc` command, and a hook-adapter plugin. One layout note: the engine tree ships at `.aidlc/`, not `.opencode/`, because opencode auto-imports `.opencode/tools/*.ts` as custom tool definitions and the engine's CLI scripts would crash the session; the shipped `opencode.json` points opencode's skill discovery at `.aidlc/skills` and carries the method-tree `instructions` glob plus the `bun .aidlc/tools/*` permission allowlist. **Upgrade:** existing installs on other harnesses are unaffected; to run on opencode copy `dist/opencode/` into your project per the README's opencode Quick Start.
+
+* New `dist/opencode/` distribution: `.aidlc/` (engine: tools, hooks, skills incl. generated stage/scope runners, agents, knowledge, scopes, sensors), `.opencode/` (native shell: 14 persona subagents with `mode: subagent`, `command/aidlc.md`, `plugin/aidlc-opencode-adapter.ts`), the `aidlc/` workspace shell, a project-root `opencode.json`, `AGENTS.md`, and `.gitignore`.
+* The adapter plugin maps opencode hook moments onto the shared core hook bodies: audit + sensor dispatch on write/edit, runtime-graph compile on bash, statusline sync on todowrite, subagent logging on task, human-presence minting per chat turn, state validation on `experimental.session.compacting`, and forwarding-loop enforcement on `session.idle` (advisory: a `block` verdict re-engages the loop by injecting a sentinel-marked nudge prompt that never mints presence).
+* Tier projection gains an `opencode` flavor: judgment agents omit `model`/`variant` (session defaults win); balanced pins `amazon-bedrock/global.anthropic.claude-sonnet-4-6`; templated adds `variant: medium`.
+* `/aidlc --doctor` on opencode checks the adapter plugin, either project-root `opencode.json` or `opencode.jsonc`, and `.opencode/command/aidlc.md`; `/aidlc space <name>` re-points every present config's AIDLC `instructions` glob without mistaking a commented block for the live setting.
+* `SESSION_ENDED` is not emitted on opencode (no session-end hook moment); the swarm runs as task-tool fan-out only (`AIDLC_USE_SWARM=1` is a loud no-op). Full differences: `docs/guide/harnesses/opencode.md`.
+* OpenCode AIDLC bun permissions now have a plugin-enforced command boundary: one direct invocation of an entrypoint embedded from the packaged `.aidlc/tools/` and `.aidlc/hooks/` set is allowed, while unshipped filenames, chaining, redirection, expansion, command substitution, and appended commands are rejected before execution. Edits to those engine directories prompt.
+* Reviewer read-scope enforcement now runs from `tool.execute.before` for OpenCode child sessions, including the native `list` tool, with exact agent identity when OpenCode supplies it and child-session scoping as the documented fallback.
+* `/aidlc space <name>` supports `opencode.jsonc` and preserves comments and trailing commas in either config filename while repointing the method include and persona memory paths.
+* OpenCode transitions under `.aidlc/tools/` now trigger runtime-graph recompilation, and relative `apply_patch` paths are resolved before real audit and sensor fan-out.
+* Native OpenCode subagents, including plugin-composed personas, deny the `task` tool through `permission.task`, and their method references point at the shipped active-space memory tree.
+* Session-start retries until an active workflow can be stamped, turn-one workflow birth reaches Stop enforcement immediately, uncertain child-session lookups fail closed without poisoning the identity cache, and concurrent idle events during one Stop check produce at most one nudge while continuation idles remain deliverable.
+
 ## [2.4.5] - 2026-07-17
 
 AI-DLC now ships a native dispatcher and release binaries, adds explicit workspace, config, and plugin command families, and makes the packaged runtime self-contained without allowing mutations beside an executable. **Upgrade:** re-copy your `dist/<harness>/` shell into the project; binary users should replace the executable and its packaged runtime together.
