@@ -124,7 +124,7 @@ Attempt to execute the build and test commands documented in the instruction fil
 ### Step 11: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .kiro/tools/aidlc-orchestrate.ts report --stage build-and-test --result <outcome>`.
+`aidlc __delegate orchestrate report --stage build-and-test --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 12: Completion

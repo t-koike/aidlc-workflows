@@ -77,7 +77,7 @@ All diagrams follow ASCII diagram standards from stage-protocol.md.
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage rough-mockups --result <outcome>`.
+`aidlc __delegate orchestrate report --stage rough-mockups --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 7: Present Completion & Request Approval

@@ -75,7 +75,7 @@ Create CloudWatch dashboard configurations, alarm definitions (with severity, SN
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .kiro/tools/aidlc-orchestrate.ts report --stage observability-setup --result <outcome>`.
+`aidlc __delegate orchestrate report --stage observability-setup --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 6: Present Completion & Request Approval

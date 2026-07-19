@@ -82,7 +82,7 @@ Run Construction → Operation verification check:
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .kiro/tools/aidlc-orchestrate.ts report --stage ci-pipeline --result <outcome>`.
+`aidlc __delegate orchestrate report --stage ci-pipeline --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 8: Present Completion & Request Approval

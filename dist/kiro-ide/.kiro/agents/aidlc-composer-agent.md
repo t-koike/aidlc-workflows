@@ -66,7 +66,7 @@ START deciding. Target: complete in ≤ 4 tool calls when CodeKB is present.
 
 ### Step 1: Detect Workspace
 
-Run `bun .kiro/tools/aidlc-utility.ts detect --json`. Returns workspace scan
+Run `aidlc __delegate utility detect --json`. Returns workspace scan
 (projectType, languages, frameworks, buildSystem) and the resolved `scopesDir`
 + `scopeGridPath`. You write ONLY to those two printed paths.
 
@@ -540,7 +540,7 @@ the `.md` files only add depth and keywords metadata.
 
 Write the proposed grid to a temp file and run:
 ```
-bun .kiro/tools/aidlc-graph.ts validate-grid --proposal <path> --project-type <greenfield|brownfield>
+aidlc __delegate graph validate-grid --proposal <path> --project-type <greenfield|brownfield>
 ```
 Lenient mode for a front/report proposal; for an IN-FLIGHT proposal add
 `--strict` (the same strict check the recompose verb re-runs after approval -
@@ -648,7 +648,7 @@ Composed scopes ship `keywords: []`. They resolve by `--scope <name>` but never
 participate in inference. Making a scope inferable is an explicit human choice
 at the gate. If keywords are granted, run the collision check:
 ```
-bun .kiro/tools/aidlc-graph.ts validate-grid --proposal <path> --keywords <granted,csv>
+aidlc __delegate graph validate-grid --proposal <path> --keywords <granted,csv>
 ```
 
 ---

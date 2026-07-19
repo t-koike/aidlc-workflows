@@ -132,7 +132,7 @@ Run Inception → Construction verification check:
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .codex/tools/aidlc-orchestrate.ts report --stage delivery-planning --result <outcome>`.
+`aidlc __delegate orchestrate report --stage delivery-planning --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 **Construction iteration.** Classify how the approved `bolt-plan.md` wants the
@@ -142,7 +142,7 @@ unit-at-a-time or walking-skeleton-first plan typically calls for authoring one
 unit's four design documents consecutively before the next unit begins; a plan
 that reasons stage-by-stage across all units does not. Only when the plan calls
 for the unit-first order, record it:
-`bun .codex/tools/aidlc-state.ts set-construction-iteration unit-major`.
+`aidlc __delegate state set-construction-iteration unit-major`.
 The default is `stage-major` (each design stage runs for every unit, then the
 next stage), needs no write, and is byte-identical to prior behaviour. Under
 `unit-major` the same four per-stage design gates still fire, but late and in a

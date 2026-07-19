@@ -173,7 +173,7 @@ After subagent completes, create `<record>/construction/{unit-name}/code-generat
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage code-generation --result <outcome>`.
+`aidlc __delegate orchestrate report --stage code-generation --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 7: Completion

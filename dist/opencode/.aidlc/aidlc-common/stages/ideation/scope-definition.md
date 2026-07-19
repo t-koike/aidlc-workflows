@@ -70,7 +70,7 @@ Create scope definition document (in/out boundary), prioritized intent backlog (
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .aidlc/tools/aidlc-orchestrate.ts report --stage scope-definition --result <outcome>`.
+`aidlc __delegate orchestrate report --stage scope-definition --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 7: Present Completion & Request Approval

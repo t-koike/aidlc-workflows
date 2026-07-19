@@ -157,7 +157,7 @@ Create `<record>/inception/requirements-analysis/requirements.md` containing:
 ### Step 12: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun .kiro/tools/aidlc-orchestrate.ts report --stage requirements-analysis --result <outcome>`.
+`aidlc __delegate orchestrate report --stage requirements-analysis --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 13: Present Completion & Request Approval
@@ -182,7 +182,7 @@ Render `[next stage]` verbatim from the run-stage directive's `next_stage`
 field (per the stage-protocol.md approval-gate binding), or `Complete workflow`
 when it is null. Never guess the next stage name.
 If "Add User Stories" is selected, run
-`bun .kiro/tools/aidlc-utility.ts recompose --add user-stories`
+`aidlc __delegate utility recompose --add user-stories`
 before re-entering the approval flow.
 
 IF User Stories is NOT set to SKIP: use standard 2-option approval (Approve / Request Changes).

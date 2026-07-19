@@ -160,7 +160,7 @@ file. The lead alone updates the four declared artifacts:
 After integration, emit `PRACTICES_DISCOVERED`:
 
 ```bash
-bun .codex/tools/aidlc-state.ts practices-event \
+aidlc __delegate state practices-event \
   --type discovered \
   --field "Sources Scanned: <list>" \
   --field "Drafts: team-practices.md, discovered-rules.md"
@@ -171,7 +171,7 @@ bun .codex/tools/aidlc-state.ts practices-event \
 Run the section 13 learnings ritual, then:
 
 1. Open the gate before the question:
-   `bun .codex/tools/aidlc-orchestrate.ts report --stage
+   `aidlc __delegate orchestrate report --stage
    practices-discovery --result awaiting-approval`.
 2. Log the affirmation question with `aidlc-log.ts decision`.
 3. Present `team-practices.md` and `discovered-rules.md` with two options:
@@ -193,7 +193,7 @@ Run the section 13 learnings ritual, then:
 The orchestrator does not edit active-space memory directly. Run:
 
 ```bash
-bun .codex/tools/aidlc-state.ts practices-promote \
+aidlc __delegate state practices-promote \
   --team-practices <record>/inception/practices-discovery/team-practices.md \
   --discovered-rules <record>/inception/practices-discovery/discovered-rules.md \
   --affirming-user "<user>"
@@ -221,7 +221,7 @@ After Step 7 prints `{"emitted":"PRACTICES_AFFIRMED",...}` and exits 0:
 
 1. Do not emit `PRACTICES_AFFIRMED` again.
 2. Commit the held approval:
-   `bun .codex/tools/aidlc-orchestrate.ts report --stage
+   `aidlc __delegate orchestrate report --stage
    practices-discovery --result approved --user-input "Approve"`.
 
 Use the stage-protocol.md completion template:
