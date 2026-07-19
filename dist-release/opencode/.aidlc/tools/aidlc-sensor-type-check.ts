@@ -5,7 +5,7 @@
 // contained: no imports from sibling tools. Wraps `bunx --package
 // typescript@6 tsc --project
 // <tsconfig> --noEmit --pretty false --incremental --tsBuildInfoFile
-// <path under aidlc-docs/.aidlc-sensors/>` and prints the locked stdout
+// <path under the active record's .aidlc-sensors/>` and prints the locked stdout
 // JSON shape:
 //
 //   {"pass": <bool>, "errors": [{file, line, column, message}, ...]}
@@ -32,7 +32,7 @@
 //   via stdout-line count, not exit code.
 //
 // * Why --incremental --tsBuildInfoFile: persist compile state across
-//   fires under aidlc-docs/.aidlc-sensors/.tsbuildinfo (gitignored by
+//   fires under the active record's .aidlc-sensors/.tsbuildinfo (gitignored by
 //   the framework). Subsequent fires re-check only changed files
 //   instead of the entire project. Doesn't fix cross-file attribution
 //   but cuts re-reporting noise — same un-introduced error doesn't spam
@@ -272,11 +272,9 @@ export function main(argv: string[]): void {
 	}
 	const tsconfigDir = dirname(tsconfigPath);
 
-	// Walk up from tsconfig to find a project-level dir for
-	// aidlc-docs/.aidlc-sensors/.tsbuildinfo. By convention aidlc-docs
-	// sits beside the consumer project; use tsconfigDir as the project
-	// anchor. The .aidlc-sensors/ dir is gitignored by the framework so
-	// the tsbuildinfo never pollutes commits.
+		// Use the tsconfig directory as the project anchor for resolving the
+		// active record's .aidlc-sensors/.tsbuildinfo. The .aidlc-sensors/
+		// directory is gitignored, so the tsbuildinfo never pollutes commits.
 	const sensorsBaseDir = sensorsDir(tsconfigDir);
 	try {
 		mkdirSync(sensorsBaseDir, { recursive: true });

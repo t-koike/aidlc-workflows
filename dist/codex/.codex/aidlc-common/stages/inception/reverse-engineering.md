@@ -55,7 +55,7 @@ Read `<record>/aidlc-state.md` to confirm:
 - Project type is brownfield
 
 If the project is not brownfield, run
-`aidlc __delegate orchestrate report --stage reverse-engineering --result skipped --reason "<reason>"`.
+`bun .codex/tools/aidlc.ts __delegate orchestrate report --stage reverse-engineering --result skipped --reason "<reason>"`.
 The engine records the skip and advances to the next in-scope stage.
 
 #### Resolve the intent's repo set (multi-repo)
@@ -137,7 +137,7 @@ a hand-composed path for what the tool prints.
 ### Step 4: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`aidlc __delegate orchestrate report --stage reverse-engineering --result <outcome>`.
+`bun .codex/tools/aidlc.ts __delegate orchestrate report --stage reverse-engineering --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 5: Present Completion & Request Approval

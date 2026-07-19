@@ -285,7 +285,7 @@ if (target === "verb-intercept") {
       process.stdout.write(
         "SYSTEM (deterministic argument forwarding): Your immediate first tool call " +
           "must be exactly the engine call below. Preserve every argument; do not run a bare `next`.\n\n" +
-          `bun .kiro/tools/aidlc-orchestrate.ts next ${invocation.raw}\n`,
+          `{{INVOKE}} __delegate orchestrate next ${invocation.raw}\n`,
       );
     }
     return 0; // non-terminal command — conductor handles the directive
@@ -419,7 +419,7 @@ if (target === "pretool-block") {
         if (!matches) {
           process.stderr.write(
             "The first aidlc-orchestrate next call dropped or changed the user's arguments. " +
-              `Run exactly: bun .kiro/tools/aidlc-orchestrate.ts next ${forwarding.raw ?? ""}\n`,
+              `Run exactly: {{INVOKE}} __delegate orchestrate next ${forwarding.raw ?? ""}\n`,
           );
           process.exit(2);
         }

@@ -228,6 +228,7 @@ Utilities:
   plugin list       Legacy direct selection view (public route uses aidlc-plugin.ts)
   plugin sync       Legacy injected-root compose (public route uses aidlc-plugin.ts)
   --doctor          Run health check on hooks, settings, and directory structure
+  --doctor --export Write a redacted diagnostic report (timeline + findings, no work product); --output <dir> to relocate
   --stage <id>      Jump to a specific stage (by slug or number, e.g., code-generation or 3.5)
   --phase <name>    Jump to the first in-scope stage of a phase (e.g., construction or 3)
   --scope <scope>   Set or change scope (standalone or with --stage/--phase)
@@ -1289,27 +1290,6 @@ export async function collectDoctorReport(
       results.push({ pass: true, label: "Rollback target: none recorded" });
     }
 
-    const stagingRoots = new Set([
-      installRoot(),
-      binRoot(),
-      dirname(installRoot()),
-      dirname(dirname(installRoot())),
-    ]);
-    const abandoned: string[] = [];
-    for (const root of stagingRoots) {
-      if (!existsSync(root)) continue;
-      for (const entry of readdirSync(root)) {
-        if (/^\.aidlc-txn-[0-9a-f-]+$/.test(entry)) abandoned.push(join(root, entry));
-      }
-    }
-    results.push({
-      pass: abandoned.length === 0,
-      label: abandoned.length === 0
-        ? "Transaction staging: no abandoned directories"
-        : `Transaction staging: ${abandoned.length} abandoned path(s): ${abandoned.join(", ")}`,
-      fix: "finish any active AI-DLC command, then rerun the command to trigger the safe staging sweep",
-    });
-
     const pinsPath = join(installRoot(), "pins.json");
     let stalePins: string[] = [];
     try {
@@ -1435,6 +1415,45 @@ export async function collectDoctorReport(
       label: "Execution mode: source checkout (no machine runtime expected)",
     });
   }
+
+  // Project-domain transactions (init, plugin sync) root at the project dir,
+  // so this scan runs on every channel, not only under an installed machine
+  // runtime.
+  const stagingRoots = new Set([projectDir]);
+  if (compiled || installedVersion) {
+    stagingRoots.add(installRoot());
+    stagingRoots.add(binRoot());
+    stagingRoots.add(dirname(installRoot()));
+    stagingRoots.add(dirname(dirname(installRoot())));
+  }
+  const abandoned: string[] = [];
+  const recovery: string[] = [];
+  for (const root of stagingRoots) {
+    if (!existsSync(root)) continue;
+    for (const entry of readdirSync(root)) {
+      if (/^\.aidlc-txn-[0-9a-f-]+$/.test(entry)) abandoned.push(join(root, entry));
+      if (/^\.aidlc-recovery-\d+-[0-9a-f-]+$/.test(entry)) {
+        recovery.push(join(root, entry));
+      }
+    }
+  }
+  abandoned.sort();
+  recovery.sort();
+  results.push({
+    pass: abandoned.length === 0,
+    label: abandoned.length === 0
+      ? "Transaction staging: no abandoned directories"
+      : `Transaction staging: ${abandoned.length} abandoned path(s): ${abandoned.join(", ")}`,
+    fix: "finish any active AI-DLC command, then rerun the command to trigger the safe staging sweep",
+  });
+  results.push({
+    pass: recovery.length === 0,
+    label: recovery.length === 0
+      ? "Transaction recovery: no quarantined directories"
+      : `Transaction recovery: ${recovery.length} quarantined path(s): ${recovery.join(", ")}`,
+    fix:
+      "inspect each listed directory, recover any needed files, then remove the directory manually",
+  });
 
   const projectStamp = join(projectDir, harnessDir(), "tools", "data", "aidlc-stamp.json");
   if (existsSync(projectStamp)) {
@@ -5201,6 +5220,15 @@ export function setStatus(
 }
 
 function handleSetStatus(projectDir: string, flags: Record<string, string>): void {
+  // Status synchronization is owned by the sync-statusline hook, which calls
+  // setStatus() in-process; the CLI surface stays blocked for everyone else.
+  if (
+    process.env.AIDLC_STATUSLINE_OWNER !== `statusline:${process.ppid}`
+  ) {
+    die(
+      "Direct aidlc-utility set-status is blocked: status synchronization is owned by the sync-statusline hook.",
+    );
+  }
   try {
     const result = setStatus(projectDir, flags);
     process.stdout.write(`${JSON.stringify({ updated: true, ...result })}\n`);
@@ -5624,6 +5652,18 @@ export async function main(argv: string[]): Promise<void> {
   const { positional, flags } = parseArgs(rawArgs);
   const subcommand = positional[0];
   errorProjectDirArg = flags["project-dir"];
+  if (
+    (subcommand === "intent-birth" || subcommand === "init") &&
+    (flags.help === "true" || rawArgs.includes("-h"))
+  ) {
+    process.stdout.write(
+      "Usage: aidlc-utility intent-birth --scope <scope> " +
+        '[--arguments "<description>"] [--label "<short label>"] ' +
+        "[--depth <level>] [--test-strategy <level>] [--repos <name,...>] " +
+        "[--project-dir <path>]\n",
+    );
+    return;
+  }
   const projectDir = resolveProjectDir(flags["project-dir"]);
 
   switch (subcommand) {

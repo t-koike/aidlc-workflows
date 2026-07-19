@@ -47,7 +47,7 @@ Each `next` reads the workflow state and the compiled stage graph and returns **
 
 Run the engine binary directly via Bash. If a directive looks malformed or names a move you cannot make, that is an engine signal worth surfacing to the user, never a cue to improvise the routing in prose.
 
-**Isolated stage-runner branch.** When a `run-stage` carries `directive.single === true`, branch here before ordinary gate handling. Run the stage body in its declared topology, write its artifacts and diary, run its configured reviewer and stage-completion verification, then call `bun .claude/tools/aidlc-orchestrate.ts report --single --stage "<directive.stage>" --result completed` exactly once. Do not run the workflow learnings ritual, report `awaiting-approval`, present a workflow gate, call main-workflow `next`, or park. The returned `done` is terminal: present the isolated-run summary and STOP. Its `gate: false` means “no workflow gate”; it does not select the ordinary bootstrap branch.
+**Isolated stage-runner branch.** When a `run-stage` carries `directive.single === true`, branch here before ordinary gate handling. Run the stage body in its declared topology, write its artifacts and diary, run its configured reviewer and stage-completion verification, then call `{{INVOKE}} __delegate orchestrate report --single --stage "<directive.stage>" --result completed` exactly once. Do not run the workflow learnings ritual, report `awaiting-approval`, present a workflow gate, call main-workflow `next`, or park. The returned `done` is terminal: present the isolated-run summary and STOP. Its `gate: false` means “no workflow gate”; it does not select the ordinary bootstrap branch.
 
 ### Acting on a directive
 

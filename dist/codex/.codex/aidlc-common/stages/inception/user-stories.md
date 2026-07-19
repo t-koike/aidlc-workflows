@@ -68,7 +68,7 @@ Create `<record>/inception/user-stories/user-stories-assessment.md` documenting 
 - If skipping: what alternative coverage exists (e.g., requirements alone are sufficient)
 
 If skipping, run
-`aidlc __delegate orchestrate report --stage user-stories --result skipped --reason "<reason>"`.
+`bun .codex/tools/aidlc.ts __delegate orchestrate report --stage user-stories --result skipped --reason "<reason>"`.
 The engine records the skip and advances to the next in-scope stage.
 
 ### Step 3: Load Prior Context
@@ -154,7 +154,7 @@ evidence — the engine refuses approval while any is missing.
 After verifying the three lead artifacts and all three contribution files, run:
 
 ```bash
-aidlc __delegate orchestrate report \
+bun .codex/tools/aidlc.ts __delegate orchestrate report \
   --stage user-stories --result awaiting-approval
 ```
 

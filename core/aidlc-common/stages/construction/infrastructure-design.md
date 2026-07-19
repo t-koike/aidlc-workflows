@@ -137,7 +137,7 @@ Generate the following in `<record>/construction/{unit-name}/infrastructure-desi
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage infrastructure-design --result <outcome>`.
+`{{INVOKE}} __delegate orchestrate report --stage infrastructure-design --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 8: Completion

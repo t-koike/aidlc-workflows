@@ -160,7 +160,7 @@ file. The lead alone updates the four declared artifacts:
 After integration, emit `PRACTICES_DISCOVERED`:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-state.ts practices-event \
+{{INVOKE}} __delegate state practices-event \
   --type discovered \
   --field "Sources Scanned: <list>" \
   --field "Drafts: team-practices.md, discovered-rules.md"
@@ -221,7 +221,7 @@ After Step 7 prints `{"emitted":"PRACTICES_AFFIRMED",...}` and exits 0:
 
 1. Do not emit `PRACTICES_AFFIRMED` again.
 2. Commit the held approval:
-   `bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage
+   `{{INVOKE}} __delegate orchestrate report --stage
    practices-discovery --result approved --user-input "Approve"`.
 
 Use the stage-protocol.md completion template:

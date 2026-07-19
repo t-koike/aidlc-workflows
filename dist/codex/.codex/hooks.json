@@ -25,6 +25,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bun .codex/tools/aidlc.ts adapter codex state-transition-guard"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "bun .codex/tools/aidlc.ts adapter codex reviewer-scope"
           }
         ]

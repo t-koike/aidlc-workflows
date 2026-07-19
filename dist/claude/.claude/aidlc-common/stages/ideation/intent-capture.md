@@ -79,7 +79,7 @@ Create `<record>/ideation/intent-capture/stakeholder-map.md` containing:
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`aidlc __delegate orchestrate report --stage intent-capture --result <outcome>`.
+`bun .claude/tools/aidlc.ts __delegate orchestrate report --stage intent-capture --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 7: Present Completion & Request Approval

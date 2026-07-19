@@ -124,7 +124,7 @@ Generate the following in `<record>/construction/{unit-name}/nfr-design/`:
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage nfr-design --result <outcome>`.
+`{{INVOKE}} __delegate orchestrate report --stage nfr-design --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 8: Completion

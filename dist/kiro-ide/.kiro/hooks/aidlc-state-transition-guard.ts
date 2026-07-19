@@ -156,19 +156,18 @@ export function directStateTransition(command: string): string | null {
   return null;
 }
 
-async function main(): Promise<void> {
-  if (process.stdin.isTTY) return;
+export async function run(input: string): Promise<number> {
   let parsed: ClaudeCodeHookInput;
   try {
-    const raw: unknown = JSON.parse(await Bun.stdin.text());
-    if (!isClaudeCodeHookInput(raw)) return;
+    const raw: unknown = JSON.parse(input);
+    if (!isClaudeCodeHookInput(raw)) return 0;
     parsed = raw;
   } catch {
-    return;
+    return 0; // malformed stdin - fail open
   }
-  if (parsed.tool_name !== "Bash") return;
+  if (parsed.tool_name !== "Bash") return 0;
   const verb = directStateTransition(parsed.tool_input?.command ?? "");
-  if (verb === null) return;
+  if (verb === null) return 0;
 
   process.stderr.write(
     `Direct aidlc-state.ts ${verb} is blocked: workflow lifecycle transitions are engine-owned. ` +
@@ -176,9 +175,10 @@ async function main(): Promise<void> {
       "<awaiting-approval|approved|rejected|revised|completed|skipped>; use " +
       "aidlc-orchestrate.ts park to park, and next/jump for routing changes.\n",
   );
-  process.exit(2);
+  return 2; // harness PreToolUse reject contract: exit 2 + stderr blocks
 }
 
 if (import.meta.main) {
-  await main();
+  if (process.stdin.isTTY) process.exit(0);
+  process.exit(await run(await Bun.stdin.text()));
 }

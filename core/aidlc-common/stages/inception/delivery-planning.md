@@ -132,7 +132,7 @@ Run Inception → Construction verification check:
 ### Step 7: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage delivery-planning --result <outcome>`.
+`{{INVOKE}} __delegate orchestrate report --stage delivery-planning --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 **Construction iteration.** Classify how the approved `bolt-plan.md` wants the

@@ -69,7 +69,7 @@ Create SSM Automation runbook library, incident response plan (integrated with A
 ### Step 5: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage incident-response --result <outcome>`.
+`{{INVOKE}} __delegate orchestrate report --stage incident-response --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 6: Present Completion & Request Approval

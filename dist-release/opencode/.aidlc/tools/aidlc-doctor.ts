@@ -1,5 +1,14 @@
 #!/usr/bin/env bun
-import { parseArgs, resolveProjectDir } from "./aidlc-lib.ts";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { errorMessage, isoTimestamp, parseArgs, resolveProjectDir } from "./aidlc-lib.ts";
+import {
+  adaptLegacyResult,
+  buildBundle,
+  mergeFindings,
+  runDoctorAnalysis,
+  type DoctorAnalysis,
+} from "./aidlc-doctor-bundle.ts";
 import {
   collectDoctorReport,
   type DoctorCheck,
@@ -97,7 +106,7 @@ function pluginCheck(projectDir: string, verbose: boolean): DoctorCheck {
   };
 }
 
-function humanReport(report: DoctorReport): string {
+function humanReport(report: DoctorReport, analysis: DoctorAnalysis): string {
   let output = "AI-DLC Health Check\n";
   output += `${"\u2500".repeat(37)}\n`;
   for (const check of report.checks) {
@@ -111,9 +120,88 @@ function humanReport(report: DoctorReport): string {
     if (!check.pass && check.fix) output += ` - ${check.fix}`;
     output += "\n";
   }
+  // Structured diagnosis findings (workflow timeline analysis) are ADVISORY and
+  // never change doctor's exit code: they render for visibility but do not count
+  // toward `failed`. Only the environment/config checks drive the exit status,
+  // so a plain `/aidlc --doctor` keeps its pre-existing contract \u2014 a
+  // workflow-level diagnosis (which can be a soft, workflow-in-progress signal)
+  // must not flip the exit code that CI and scripts gate on. Info is omitted
+  // from the live view to keep it terse; the export carries the full set.
+  const diagErrors = analysis.findings.filter((f) => f.severity === "error");
+  const diagWarnings = analysis.findings.filter((f) => f.severity === "warning");
+  if (diagErrors.length > 0 || diagWarnings.length > 0) {
+    output += `${"\u2500".repeat(37)}\n`;
+    output += "Workflow diagnosis (advisory):\n";
+    for (const f of diagErrors) {
+      output += `\u2717  [${f.id}] ${f.summary}`;
+      if (f.remedy) output += ` (${f.remedy})`;
+      output += "\n";
+    }
+    for (const f of diagWarnings) {
+      output += `!  [${f.id}] ${f.summary}\n`;
+    }
+  }
   output += `${"\u2500".repeat(37)}\n`;
   output += `${report.passed} passed, ${report.warnings} warnings, ${report.failed} failed\n`;
   return output;
+}
+
+// A filesystem-safe UTC timestamp token (isoTimestamp has colons that some
+// filesystems reject in names): 2026-07-14T15:26:31Z \u2192 20260714T152631Z.
+function fsSafeTimestamp(): string {
+  return isoTimestamp().replace(/[-:]/g, "").replace(/\.\d+/, "");
+}
+
+// --export: after the live report, write a redacted diagnostic report from
+// the SAME analysis this run already computed (issue #575). No second read,
+// no cached diagnosis. The export write never changes doctor's exit code.
+// `--export` is a bare boolean flag; accept it whether the arg parser recorded
+// it as "true" (bare) or a stray token followed it, so a trailing word can
+// never silently disable the export.
+function writeExport(
+  projectDir: string,
+  flags: Record<string, string>,
+  report: DoctorReport,
+  analysis: DoctorAnalysis,
+): void {
+  try {
+    const tsToken = fsSafeTimestamp();
+    // A bare `--output` (no value) parses to "true"; treat that as an error
+    // rather than creating a directory literally named "true".
+    if (flags.output === "true") {
+      throw new Error("--output requires a directory path (e.g. --output /tmp/aidlc-report)");
+    }
+    const outParent = flags.output
+      ? flags.output
+      : join(projectDir, "aidlc", "diagnostics");
+    mkdirSync(outParent, { recursive: true });
+    // Merge the legacy environment/config checks (bun present, hooks wired,
+    // settings intact) into the exported analysis so report.md/report.json
+    // carry the SAME findings the live report shows \u2014 the bundle exists so
+    // the maintainer does NOT need the user's project, so a failing env check
+    // must reach it. The live render and the exit code are untouched; this
+    // only enriches what buildBundle serializes. (Arden round-3 #1.)
+    const analysisForExport = {
+      ...analysis,
+      findings: mergeFindings(report.checks.map(adaptLegacyResult), analysis.findings),
+    };
+    const exported = buildBundle(outParent, analysisForExport, tsToken);
+    let out = "\nDiagnostic report created:\n";
+    out += `  ${exported.archivePath ?? exported.bundleDir}\n\n`;
+    out += "Findings:\n";
+    const topFindings = exported.findings.filter((f) => f.severity !== "info").slice(0, 20);
+    if (topFindings.length === 0) {
+      out += "  (no errors or warnings)\n";
+    } else {
+      for (const f of topFindings) out += `  ${f.severity.toUpperCase()} ${f.id}\n`;
+    }
+    out += "\nNo source files or artifact bodies were included.\n";
+    if (exported.manualShareNote) out += `\n${exported.manualShareNote}\n`;
+    process.stdout.write(out);
+  } catch (e) {
+    // Export failure must not mask the live doctor result; report and go on.
+    process.stdout.write(`\nDiagnostic report could not be created: ${errorMessage(e)}\n`);
+  }
 }
 
 export async function main(argv: string[]): Promise<void> {
@@ -126,6 +214,11 @@ export async function main(argv: string[]): Promise<void> {
   checks.push(updateCheck(update));
   checks.push(pluginCheck(projectDir, flags.verbose === "true"));
   const report = await collectDoctorReport(projectDir, checks);
+  // One fresh analysis, shared by the live report AND the --export writer
+  // (issue #575): the structured condition->remedy findings and the
+  // reconstructed timeline are computed ONCE here, so the live output and the
+  // export can never diverge. The analysis performs no writes.
+  const analysis = runDoctorAnalysis(projectDir);
   const code = update.state === "invalid-config"
     ? 2
     : report.failed > 0
@@ -150,8 +243,9 @@ export async function main(argv: string[]): Promise<void> {
       `${report.passed} passed, ${report.warnings} warnings, ${report.failed} failed\n`,
     );
   } else {
-    process.stdout.write(humanReport(report));
+    process.stdout.write(humanReport(report, analysis));
   }
+  if ("export" in flags) writeExport(projectDir, flags, report, analysis);
   process.exitCode = code;
 }
 

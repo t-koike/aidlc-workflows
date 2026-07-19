@@ -529,7 +529,7 @@ export const ROUTES: readonly Route[] = [
     group: "audit",
     kind: "noun-passthrough",
     classification: "passthrough",
-    verbs: ["append", "append-raw"],
+    verbs: ["append", "append-batch", "append-raw"],
     tool: TOOLS.audit,
     ...HIDDEN_ENGINE,
   },
