@@ -123,27 +123,7 @@ If ANY ambiguity, vagueness, or contradictions found in Step 8:
 - Resolve all ambiguities before proceeding
 - When in doubt, ask. Incomplete answers lead to poor designs.
 
-### Step 10: Confirm the Consolidated Summary
-
-MANDATORY PRE-GENERATION STOP: After every original and follow-up answer is
-filled, append or update a `## Consolidated Summary Confirmation` entry in
-`<record>/inception/requirements-analysis/requirements-analysis-questions.md`.
-The entry MUST contain:
-
-- A clear list summarizing every answer
-- `Does this all look correct before I generate the requirements artifact?`
-- `Looks correct` and `Request changes` options
-- A blank `[Answer]:` tag
-
-Present that prompt as a structured question using the
-`Looks correct` / `Request changes` options from `stage-protocol.md`, then end
-the turn and wait for the user's response. Fill the confirmation `[Answer]:`
-tag only after the user responds. If the user requests changes, update the
-affected answers, reset the confirmation `[Answer]:` to blank, and repeat this
-step. Do NOT create `requirements.md` until the confirmation entry contains the
-user's explicit `Looks correct` answer.
-
-### Step 11: Generate Requirements
+### Step 10: Generate Requirements
 
 Create `<record>/inception/requirements-analysis/requirements.md` containing:
 - **Intent analysis** — What the user is trying to achieve (goals, not just features)
@@ -154,13 +134,13 @@ Create `<record>/inception/requirements-analysis/requirements.md` containing:
 - **Out of scope** — Explicitly excluded items
 - **Open questions** — Any remaining uncertainties for later stages
 
-### Step 12: Completion Handoff
+### Step 11: Update State
 
-Hand completion to `stage-protocol.md` via
-`aidlc __delegate orchestrate report --stage requirements-analysis --result <outcome>`.
-The engine owns all lifecycle transitions and advancement.
+Update `<record>/aidlc-state.md`:
+- Mark Requirements Analysis as `[x]` completed
+- Update current stage and next stage
 
-### Step 13: Present Completion & Request Approval
+### Step 12: Present Completion & Request Approval
 
 Use stage-protocol.md completion template with completion emoji: :mag:
 - Summary of requirements produced
@@ -181,9 +161,7 @@ options:
 Render `[next stage]` verbatim from the run-stage directive's `next_stage`
 field (per the stage-protocol.md approval-gate binding), or `Complete workflow`
 when it is null. Never guess the next stage name.
-If "Add User Stories" is selected, run
-`aidlc __delegate utility recompose --add user-stories`
-before re-entering the approval flow.
+If "Add User Stories" selected: update aidlc-state.md to mark User Stories as pending execution.
 
 IF User Stories is NOT set to SKIP: use standard 2-option approval (Approve / Request Changes).
 
@@ -214,13 +192,13 @@ Before the approval gate, read memory.md and surface candidates as a
 structured question. For each entry the user keeps, write to the appropriate
 harness destination per `stage-protocol.md` §13 — never to this stage file:
 
-- Prescriptive rule → a practice line under the routed heading in
-  `aidlc/spaces/<active-space>/memory/project.md` (default) or `team.md` (promoted)
+- Prescriptive rule → `.aidlc/rules/aidlc-phase-<phase>.md` (phase-scoped)
+  or `.aidlc/rules/aidlc-<org|team|project>.md` (cross-cutting)
 - Verification check → new manifest at `.aidlc/sensors/aidlc-<id>.md`
   (capability descriptor only — no `applies_to`); add the new id to
   the relevant stage's `sensors: [...]` frontmatter list to wire it
 
-Even when nothing surfaces, still ask the mandatory "Anything to add for next time?" question from stage-protocol.md section 13. Do not infer "Nothing to add." Only after the human answers that question may you proceed to the gate. The memory.md
+If nothing surfaces or the user skips all, proceed to the gate. The memory.md
 file stays in the artefact directory as part of the stage's permanent record.
 
 Stage files are immutable framework artefacts — the ritual writes into the

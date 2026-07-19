@@ -49,8 +49,8 @@ export type DirectiveKind =
   | "done"
   | "parked";
 
-// run-stage — load the resolved rules, load lead + support agents, load
-// `consumes` artifacts, run the stage body, write `produces`, keep memory.md. Routing fields (lead_agent,
+// run-stage — load lead + support agents, load `consumes` artifacts, run the
+// stage body, write `produces`, keep memory.md. Routing fields (lead_agent,
 // support_agents, mode, gate, sensors_applicable, rules_in_context, stage_file)
 // are read straight off the compiled stage-graph.json node; consumes/produces
 // carry RESOLVED aidlc-docs/... paths (the engine resolves vocabulary names →
@@ -61,16 +61,7 @@ export interface RunStageDirective {
   phase: string;
   lead_agent: string;
   support_agents: string[];
-  mode: "inline" | "subagent" | "pipeline" | "mob" | "agent-team";
-  // single marks an isolated stage-runner invocation. The conductor branches
-  // on this before gate handling, reports with `report --single`, and treats
-  // the returned `done` as terminal.
-  single?: boolean;
-  // Exact persona + knowledge files the conductor must read for work it owns
-  // inline: lead + supports on inline stages, lead only on a mob (supports are
-  // dispatched), and empty on fully-dispatched subagent/pipeline topologies.
-  // Carrying paths makes persona loading observable and enforceable in traces.
-  inline_context_paths: string[];
+  mode: "inline" | "subagent" | "agent-team";
   // gate is a boolean for every deterministic case; the string sentinel
   // GATE_UNRESOLVED ("unresolved") appears ONLY for the first Construction Bolt's
   // walking-skeleton gate, which the conductor resolves via report (the
@@ -82,8 +73,6 @@ export interface RunStageDirective {
   // conductor is never pointed at a path that cannot be read.
   consumes: string[];
   produces: string[];
-  // Exact active-space rule paths to read before work. On dispatched
-  // topologies the conductor passes this roster to every agent brief.
   rules_in_context: string[];
   sensors_applicable: string[];
   stage_file: string;
@@ -145,8 +134,7 @@ export interface DispatchSubagentDirective {
   phase: string;
   lead_agent: string;
   support_agents: string[];
-  mode: "inline" | "subagent" | "pipeline" | "mob" | "agent-team";
-  inline_context_paths: string[];
+  mode: "inline" | "subagent" | "agent-team";
   gate: GateValue;
   memory_path: string;
   consumes: string[];
@@ -268,7 +256,7 @@ export const VALID_KINDS = [
 // The mode enum carried by run-stage / dispatch-subagent. Mirrors
 // aidlc-stage-schema.ts VALID_MODES (the directive's mode is read straight off
 // the stage node, so the value set is identical).
-export const VALID_MODES = ["inline", "subagent", "pipeline", "mob", "agent-team"] as const;
+export const VALID_MODES = ["inline", "subagent", "agent-team"] as const;
 
 // Per-kind allowed-key sets. A field outside its kind's set is rejected as an
 // unknown key (mirrors aidlc-stage-schema.ts KNOWN_FIELDS). `kind` is always
@@ -281,8 +269,6 @@ const RUN_STAGE_FIELDS = [
   "lead_agent",
   "support_agents",
   "mode",
-  "single",
-  "inline_context_paths",
   "gate",
   "memory_path",
   "consumes",
@@ -298,12 +284,8 @@ const RUN_STAGE_FIELDS = [
   "consumes_absent",
 ] as const;
 
-// dispatch-subagent = shared run-stage fields + `worker`; the isolated-run
-// marker belongs only to the emitted run-stage kind.
-const DISPATCH_SUBAGENT_FIELDS = [
-  ...RUN_STAGE_FIELDS.filter((field) => field !== "single"),
-  "worker",
-] as const;
+// dispatch-subagent = run-stage fields + `worker`.
+const DISPATCH_SUBAGENT_FIELDS = [...RUN_STAGE_FIELDS, "worker"] as const;
 
 const INVOKE_SWARM_FIELDS = ["kind", "units", "repo"] as const;
 const PRESENT_GATE_FIELDS = ["kind", "stage", "phase", "memory_path"] as const;
@@ -371,7 +353,6 @@ export function validateDirective(obj: unknown): ValidationResult {
   switch (kind) {
     case "run-stage":
       checkRunStageShared(o, kind, errors);
-      checkOptionalBoolean(o, "single", kind, errors);
       break;
     case "dispatch-subagent":
       checkRunStageShared(o, kind, errors);
@@ -434,7 +415,6 @@ function checkRunStageShared(
   checkStringArray(o, "support_agents", kind, errors);
   checkString(o, "mode", kind, errors);
   checkEnum(o, "mode", VALID_MODES, kind, errors);
-  checkStringArray(o, "inline_context_paths", kind, errors);
   checkGate(o, "gate", kind, errors);
   checkString(o, "memory_path", kind, errors);
   checkStringArray(o, "consumes", kind, errors);
@@ -518,20 +498,6 @@ function checkOptionalString(
   if (!(field in o)) return;
   if (typeof o[field] !== "string") {
     errors.push(`${kind}: ${field} must be string, got ${describe(o[field])}`);
-  }
-}
-
-// checkOptionalBoolean — a field that may be absent, but if present must be a
-// boolean (e.g. run-stage.single, emitted only for isolated stage runners).
-function checkOptionalBoolean(
-  o: Record<string, unknown>,
-  field: string,
-  kind: DirectiveKind,
-  errors: string[],
-): void {
-  if (!(field in o)) return;
-  if (typeof o[field] !== "boolean") {
-    errors.push(`${kind}: ${field} must be boolean, got ${describe(o[field])}`);
   }
 }
 
@@ -647,10 +613,9 @@ function checkEnum(
 
 // --- CLI self-check ---
 //
-// `bun aidlc-directive.ts` constructs one well-formed example of each of the 9
-// kinds, validates each, prints one line per kind ("<kind>: VALID" or the
-// errors), and exits 0 iff all 9 validate. Satisfies the acceptance check
-// "bun .../aidlc-directive.ts validates the 9 kinds".
+// This module's CLI self-check constructs one well-formed example of each of
+// the 9 kinds, validates each, prints one line per kind ("<kind>: VALID" or the
+// errors), and exits 0 iff all 9 validate.
 if (import.meta.main) {
   // One well-formed example per kind. run-stage mirrors the engine design's example
   // directive verbatim (application-design); the others follow the same catalogue table.
@@ -662,11 +627,6 @@ if (import.meta.main) {
       lead_agent: "aidlc-architect-agent",
       support_agents: ["aidlc-aws-platform-agent", "aidlc-design-agent"],
       mode: "inline",
-      inline_context_paths: [
-        ".claude/agents/aidlc-architect-agent.md",
-        ".claude/agents/aidlc-aws-platform-agent.md",
-        ".claude/agents/aidlc-design-agent.md",
-      ],
       gate: true,
       memory_path: "aidlc-docs/inception/application-design/memory.md",
       consumes: ["aidlc-docs/inception/requirements/requirements.md"],
@@ -688,7 +648,6 @@ if (import.meta.main) {
       lead_agent: "aidlc-developer-agent",
       support_agents: ["aidlc-quality-agent"],
       mode: "subagent",
-      inline_context_paths: [],
       gate: false,
       memory_path: "aidlc-docs/construction/auth/code-generation/memory.md",
       consumes: ["aidlc-docs/construction/auth/functional-design/functional-design.md"],
@@ -728,10 +687,6 @@ if (import.meta.main) {
       lead_agent: "aidlc-architect-agent",
       support_agents: ["aidlc-developer-agent"],
       mode: "inline",
-      inline_context_paths: [
-        ".claude/agents/aidlc-architect-agent.md",
-        ".claude/agents/aidlc-developer-agent.md",
-      ],
       gate: GATE_UNRESOLVED,
       memory_path: "aidlc-docs/construction/{unit-name}/functional-design/memory.md",
       consumes: [],

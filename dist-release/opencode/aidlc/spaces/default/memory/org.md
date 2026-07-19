@@ -1,8 +1,7 @@
 # Org-Level Rules
 
-> Framework defaults. Read with `team.md` and `project.md` from the active
-> space. The resolver loads every applicable layer; narrower layers add
-> specialisation and must not contradict broader policy.
+> Framework defaults. Read in order with aidlc-team.md and
+> aidlc-project.md; later layers override.
 
 ## Way of Working
 
@@ -56,7 +55,7 @@ Until then, our default per scope is:
 - `poc`, `refactor`, `workshop` → existing test suite remains green;
   no new test floor required.
 
-Affirm a stricter posture in `team.md` if the team commits to one.
+Override at `aidlc-team.md` if the team commits to a stricter posture.
 
 ## Deployment
 
@@ -97,6 +96,7 @@ linter doesn't already cover it.
 ## Corrections
 
 <!-- Self-learning loop appends here. -->
-<!-- Use team.md to record team-wide additions and project.md for
-     project-specific specialisation. The loader resolves org → team →
-     project at session start and retains every applicable rule. -->
+<!-- Use aidlc-team.md to record team-wide overrides; aidlc-project.md
+     to record project-specific deviations. The loaders merge org → team
+     → project at session start; each layer replaces fields the layer
+     above set; missing fields fall through. -->

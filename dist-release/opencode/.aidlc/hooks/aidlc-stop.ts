@@ -1,7 +1,7 @@
 // Stop hook: enforce the forwarding loop on turn-end.
 //
-// This is one of the framework's flow-altering hooks. The advisory hooks
-// observe (audit, sensors, statusline, state
+// This is the framework's FIRST flow-altering hook. The other framework
+// hooks are advisory — they observe (audit, sensors, statusline, state
 // validation) and always exit 0. The sensor-fire hook in particular carries
 // an explicit advisory contract: it NEVER returns {decision: block} (its own
 // contract, asserted by t95 Case 7 — not a framework ban). This hook is a
@@ -92,7 +92,6 @@ import {
   auditFilePath,
   composeMarkerPath,
   COMPOSE_MARKER_TTL_MS,
-  docsRoot,
   errorMessage,
   getField,
   isEngineToolCall,
@@ -145,7 +144,7 @@ const INTERACTIVE_BLOCK_CAP = 2;
 // returns must not hang the hook for the whole turn (a session trap the
 // block-count guard cannot see — it only counts blocks that complete). The
 // read-only engine answers in well under a second normally; 10s is generous
-// headroom. On timeout the spawn returns non-zero and runEngineNextDirective fails
+// headroom. On timeout the spawn returns non-zero and runEngineNextKind fails
 // OPEN (allows the stop).
 const ENGINE_TIMEOUT_MS = 10_000;
 
@@ -375,10 +374,9 @@ function isHumanWaitStop(stateContent: string): boolean {
 // Two strict gates make this safe (it can still only ever ALLOW, never block
 // more):
 //   1. POSITIVE-CONFIRMATION — allow only when a `<slug>-questions.md` under the
-//      current stage's canonical dir, or the exact active-unit dir carried by a
-//      Construction directive, has at least one `[Answer]:` tag that is empty or
-//      underscores-only. No file, all answered, or any read error → false (fall
-//      through to the cap).
+//      current stage's dir (aidlc-docs/<phase>/<slug>/, mirroring memoryPathFor)
+//      has at least one `[Answer]:` tag that is empty or underscores-only. No
+//      file, all answered, or any read error → false (fall through to the cap).
 //   2. AUTONOMY GUARD — never fires under autonomous Construction
 //      (`Construction Autonomy Mode: autonomous`). There the loop MUST keep
 //      running unattended (gates are skipped; a failure halt-and-asks via its
@@ -386,27 +384,15 @@ function isHumanWaitStop(stateContent: string): boolean {
 //      the run waiting on a human who was told they weren't needed.
 // Fail-open throughout: any error returns false and the cap-bounded block stands.
 
-// True when the `<slug>-questions.md` under the active stage dir has an
-// unanswered tag.
+// True when the `<slug>-questions.md` under the stage dir has an unanswered tag.
 // An `[Answer]:` line is "unanswered" when, after the colon, only whitespace or
 // underscores remain (stage-protocol.md:333 — "blank or contains only
-// underscores"). Standard stages use `<record>/<phase>/<slug>/`; a per-unit
-// Construction directive carries its exact unit and uses
-// `<record>/construction/<unit>/<slug>/`. We never recursively accept a question
-// from a different unit: an old unanswered file must not disable enforcement for
-// the unit currently named by the engine.
-function hasPendingQuestion(
-  projectDir: string,
-  slug: string,
-  phase: string,
-  unit?: string,
-): boolean {
+// underscores"). Scans the stage dir for any *-questions.md (the canonical name
+// is `<slug>-questions.md`, but matching the suffix is robust to the per-unit
+// Construction `{unit}` path segment the engine does not yet resolve).
+function hasPendingQuestion(projectDir: string, slug: string, phase: string): boolean {
   if (slug.length === 0 || phase.length === 0) return false;
-  const normalizedPhase = phase.toLowerCase();
-  const stageDirPath =
-    normalizedPhase === "construction" && unit
-      ? join(docsRoot(projectDir), normalizedPhase, unit, slug)
-      : stageDir(projectDir, normalizedPhase, slug);
+  const stageDirPath = stageDir(projectDir, phase.toLowerCase(), slug);
   if (!existsSync(stageDirPath)) return false;
   let files: string[];
   try {
@@ -429,11 +415,7 @@ function hasPendingQuestion(
 
 // The tier-2 carve-out decision: the current stage is [-] in-progress, a
 // question is pending, and we are NOT in autonomous Construction.
-function isPendingQuestionStop(
-  projectDir: string,
-  stateContent: string,
-  unit?: string,
-): boolean {
+function isPendingQuestionStop(projectDir: string, stateContent: string): boolean {
   try {
     if (getField(stateContent, "Construction Autonomy Mode")?.trim() === "autonomous") {
       return false; // autonomy guard — keep the loop alive
@@ -443,7 +425,7 @@ function isPendingQuestionStop(
     const row = parseCheckboxes(stateContent).find((c) => c.slug === slug);
     if (row?.state !== "in-progress") return false; // positive [-] only
     const phase = getField(stateContent, "Lifecycle Phase") ?? "";
-    return hasPendingQuestion(projectDir, slug, phase, unit);
+    return hasPendingQuestion(projectDir, slug, phase);
   } catch {
     // Unparseable / odd content — fall through to decideBlock (never trap).
     return false;
@@ -735,19 +717,13 @@ function isConversationalStop(
 
 // --- Compose the engine -------------------------------------------------------
 //
-interface EngineDirective {
-  kind: string;
-  unit?: string;
-}
-
-// Run `aidlc-orchestrate.ts next` and return the parsed directive fields the
-// hook needs, or null
+// Run `aidlc-orchestrate.ts next` and return its parsed directive kind, or null
 // if the engine could not be consulted (spawn failure, non-zero exit, or
-// unparseable stdout). A null directive fails OPEN — the caller allows the stop —
+// unparseable stdout). A null kind fails OPEN — the caller allows the stop —
 // because we will not trap a turn on the engine's behalf when we cannot read a
 // directive. We pass --project-dir explicitly so the engine resolves the same
 // workspace regardless of the spawned process's cwd.
-function runEngineNextDirective(projectDir: string): EngineDirective | null {
+function runEngineNextKind(projectDir: string): string | null {
   const enginePath = join(projectDir, harnessDir(), "tools", "aidlc-orchestrate.ts");
   if (!existsSync(enginePath)) return null;
   // The spawn MUST be time-bounded. Without a timeout a hung `next` (an engine
@@ -773,12 +749,7 @@ function runEngineNextDirective(projectDir: string): EngineDirective | null {
       "kind" in parsed &&
       typeof (parsed as { kind: unknown }).kind === "string"
     ) {
-      const kind = (parsed as { kind: string }).kind;
-      const unit =
-        "unit" in parsed && typeof (parsed as { unit?: unknown }).unit === "string"
-          ? (parsed as { unit: string }).unit.trim()
-          : "";
-      return unit.length > 0 ? { kind, unit } : { kind };
+      return (parsed as { kind: string }).kind;
     }
   } catch {
     // Unparseable directive — fail open.
@@ -868,14 +839,13 @@ try {
   // counter still bounds any block. We never crash on bad input.
 }
 
-// Consult the engine for the next move. A null directive (engine unavailable /
+// Consult the engine for the next move. A null kind (engine unavailable /
 // unparseable) fails open — allow the stop.
-const directive = runEngineNextDirective(projectDir);
-if (directive === null) {
+const kind = runEngineNextKind(projectDir);
+if (kind === null) {
   recordHookDrop(projectDir, HOOK_NAME, "engine next returned no parseable directive; allowing stop");
   return allowStop();
 }
-const kind = directive.kind;
 
 // `done` → the workflow is complete; allow the turn to end and clear the guard
 // so a future stuck sequence starts fresh.
@@ -945,7 +915,7 @@ if (isHumanWaitStop(stateContent)) {
 // question, an autonomous run, or a read error falls through to the cap-bounded
 // block below, so a genuine mid-stage quit (and every autonomous run) is
 // unaffected.
-if (isPendingQuestionStop(projectDir, stateContent, directive.unit)) {
+if (isPendingQuestionStop(projectDir, stateContent)) {
   recordHookDrop(
     projectDir,
     HOOK_NAME,

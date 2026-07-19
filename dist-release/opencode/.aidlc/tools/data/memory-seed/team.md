@@ -1,8 +1,7 @@
 # Team-Level Rules
 
-> This team's affirmed practices and corrections. Loaded after `org.md` as
-> strict-additive guidance; contradictions with broader policy are rejected.
-> Populated by the practices-discovery affirmation gate. Edit at the gate,
+> This team's affirmed practices and corrections. Overrides aidlc-org.md.
+> Populated by practices-discovery affirmation gate. Edit at the gate,
 > not directly.
 
 ## Way of Working
@@ -19,7 +18,7 @@
 
 ## Testing Posture
 
-<!-- Affirmed during practices-discovery. Example: -->
+<!-- Affirmed at requirements-analysis. Example: -->
 <!-- We use BDD. Specifications drive scenarios; scenarios drive code. -->
 <!-- Each Unit ships with feature files in /features/. -->
 

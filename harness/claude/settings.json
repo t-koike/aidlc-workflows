@@ -7,8 +7,7 @@
       "Read",
       "Edit",
       "Write",
-      "Bash(bun \"$CLAUDE_PROJECT_DIR/.claude/tools/\"*)",
-      "Bash",
+      "Bash({{INVOKE}} *)",
       "Glob",
       "Grep",
       "Task",
@@ -17,7 +16,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-statusline.ts\""
+    "command": "{{INVOKE}} statusline"
   },
   "env": {
     "AWS_AIDLC_DEFAULT_SCOPE": "workshop",
@@ -37,11 +36,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-state-transition-guard.ts\""
+            "command": "{{INVOKE}} hook state-transition-guard"
           },
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-reviewer-scope.ts\""
+            "command": "{{INVOKE}} hook reviewer-scope"
           }
         ]
       }
@@ -52,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-mint-presence.ts\""
+            "command": "{{INVOKE}} hook mint-presence"
           }
         ]
       }
@@ -63,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-session-start.ts\""
+            "command": "{{INVOKE}} hook session-start"
           }
         ]
       }
@@ -74,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-session-end.ts\""
+            "command": "{{INVOKE}} hook session-end"
           }
         ]
       }
@@ -85,11 +84,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-audit-logger.ts\""
+            "command": "{{INVOKE}} hook audit-logger"
           },
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-sensor-fire.ts\""
+            "command": "{{INVOKE}} hook sensor-fire"
           }
         ]
       },
@@ -98,7 +97,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-sync-statusline.ts\""
+            "command": "{{INVOKE}} hook sync-statusline"
           }
         ]
       },
@@ -107,7 +106,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-mint-presence.ts\""
+            "command": "{{INVOKE}} hook mint-presence"
           }
         ]
       },
@@ -116,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-runtime-compile.ts\""
+            "command": "{{INVOKE}} hook runtime-compile"
           }
         ]
       }
@@ -127,7 +126,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-validate-state.ts\""
+            "command": "{{INVOKE}} hook validate-state"
           }
         ]
       }
@@ -138,7 +137,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-log-subagent.ts\""
+            "command": "{{INVOKE}} hook log-subagent"
           }
         ]
       }
@@ -149,7 +148,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/aidlc-stop.ts\""
+            "command": "{{INVOKE}} hook stop"
           }
         ]
       }

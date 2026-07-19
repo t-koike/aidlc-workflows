@@ -56,20 +56,14 @@ and STOP. Otherwise keep the parsed JSON for the count fields below.
 
 ### Step 2: Read the content sources
 
-Resolve `<active-space>` from `aidlc/active-space` (default `default`) and
-`<active-intent>` from
-`aidlc/spaces/<active-space>/intents/active-intent`. The active workflow
-record is
-`aidlc/spaces/<active-space>/intents/<active-intent>`.
-
-- All artefacts recursively under `<record>/<phase>/` — requirements,
-  design decisions, NFRs, infrastructure, and per-unit outputs.
+- All artefacts under `aidlc-docs/<phase>/<stage>/` — requirements,
+  design decisions, NFRs, infrastructure.
 - The delivered application and infrastructure code at the workspace
   root.
 
 ### Step 3: Write OUTCOMES.md
 
-Write `OUTCOMES.md` at the workspace root (outside `<record>/`):
+Write `OUTCOMES.md` at the workspace root (not inside `aidlc-docs/`):
 
 ```markdown
 # Outcomes Pack
@@ -111,9 +105,9 @@ Write `OUTCOMES.md` at the workspace root (outside `<record>/`):
 | `decisions.md` (per stage) | Commit | `docs/decisions/` |
 | Architecture summary (1 page) | Write + commit | `docs/architecture.md` |
 | NFR summary table | Write + commit | `docs/nfr-summary.md` |
-| `<record>/audit/*.md` shards | Archive — do NOT commit to app repo | Compliance archive |
+| `audit.md` | Archive — do NOT commit to app repo | Compliance archive |
 | Stage question files | Discard | — |
-| `<record>/aidlc-state.md` | Discard | — |
+| `aidlc-state.md` | Discard | — |
 | Application / infrastructure code | Already committed | — |
 
 ## 7. Workflow Footprint

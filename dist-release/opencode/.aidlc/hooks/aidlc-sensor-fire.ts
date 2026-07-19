@@ -9,8 +9,7 @@
 // looked up, already attached."
 //
 // Coexists with `aidlc-audit-logger.ts` under the same Write|Edit
-// matcher; recursion guard skips writes to the active record's
-// `.aidlc-sensors/` directory.
+// matcher; recursion guard skips writes to `aidlc-docs/.aidlc-sensors/`.
 //
 // Exit-code contract (G5): always exit 0. Sensor verdicts surface
 // through the dispatcher's audit rows (SENSOR_FIRED + paired

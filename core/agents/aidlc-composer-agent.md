@@ -66,7 +66,7 @@ START deciding. Target: complete in ≤ 4 tool calls when CodeKB is present.
 
 ### Step 1: Detect Workspace
 
-Run `bun {{HARNESS_DIR}}/tools/aidlc-utility.ts detect --json`. Returns workspace scan
+Run `{{INVOKE}} __delegate utility detect --json`. Returns workspace scan
 (projectType, languages, frameworks, buildSystem) and the resolved `scopesDir`
 + `scopeGridPath`. You write ONLY to those two printed paths.
 

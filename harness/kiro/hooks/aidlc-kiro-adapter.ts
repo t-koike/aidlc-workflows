@@ -24,7 +24,7 @@
 //     is IDENTICAL (verified live), so it passes through verbatim.
 //
 // Usage (registered in .kiro/agents/aidlc.json):
-//   bun .kiro/hooks/aidlc-kiro-adapter.ts <target>
+//   {{INVOKE}} adapter kiro <target>
 // where <target> ∈ session-start | audit-and-sensors | runtime-compile |
 //                  state-sync | log-subagent | stop | verb-intercept |
 //                  pretool-block | state-transition-guard | reviewer-scope
@@ -109,7 +109,7 @@ const childCwd = process.env.AIDLC_PROJECT_DIR ? projectDir : process.cwd();
 // WHY the args are recovered from the EXPANDED body: Kiro fires userPromptSubmit
 // with `prompt` = the fully-expanded skill body (the raw `/aidlc …` literal is
 // gone), but it SUBSTITUTES the user's post-/aidlc text ($ARGUMENTS) into the
-// forwarding-loop anchor `aidlc-orchestrate.ts next <ARGS>`. We read the args
+// forwarding-loop anchor `{{INVOKE}} __delegate orchestrate next <ARGS>`. We read the args
 // back from that anchor — the same text the conductor would forward.
 function shellWords(input: string): string[] {
   const words: string[] = [];
@@ -157,7 +157,7 @@ function shellWords(input: string): string[] {
 function extractNextInvocation(
   expandedPrompt: string,
 ): { raw: string; args: string[] } {
-  // Match the FIRST `… aidlc-orchestrate.ts next <ARGS>` occurrence (the loop's
+  // Match the FIRST `… {{INVOKE}} __delegate orchestrate next <ARGS>` occurrence (the loop's
   // step-1 anchor) and take the tokens up to the closing backtick. The anchor is
   // inside a markdown code span, so the args end at the backtick.
   const m = expandedPrompt.match(/aidlc-orchestrate\.ts next ([^`\n]*)`/);
@@ -340,7 +340,7 @@ if (target === "verb-intercept") {
     ? `--${cmd.subcommand}`
     : (cmd.display ?? [cmd.subcommand, ...forwarded].join(" "));
   process.stdout.write(
-    `SYSTEM (deterministic harness dispatch): The command \`/aidlc ${typed}\` has ALREADY been run by the harness — it is a read-only/navigation command that carries NO workflow work. Its verbatim output is below. Your ONLY action this turn: relay that output to the user, then STOP. Do NOT run \`aidlc-orchestrate.ts next\`. Do NOT advance, resume, or run any workflow stage.\n\n--- OUTPUT ---\n${out}\n--- END OUTPUT ---\n`,
+    `SYSTEM (deterministic harness dispatch): The command \`/aidlc ${typed}\` has ALREADY been run by the harness — it is a read-only/navigation command that carries NO workflow work. Its verbatim output is below. Your ONLY action this turn: relay that output to the user, then STOP. Do NOT run \`aidlc __delegate orchestrate next\`. Do NOT advance, resume, or run any workflow stage.\n\n--- OUTPUT ---\n${out}\n--- END OUTPUT ---\n`,
   );
   return 0;
 }
@@ -353,8 +353,9 @@ if (target === "verb-intercept") {
 // advancing next this same turn. But Kiro's userPromptSubmit can only INJECT, not
 // block — so if the live conductor retries a bare `next` past the engine's `done`,
 // this preToolUse hook is the hard floor: when the latch is fresh-for-this-turn and
-// the attempted execute_bash command is a TRULY BARE advancing `aidlc-orchestrate.ts
-// next` (no advancing flag, classifyTerminalCommand === null), exit 2 + stderr →
+// the attempted execute_bash command is a TRULY BARE advancing
+// `aidlc __delegate orchestrate next` (no advancing flag,
+// classifyTerminalCommand === null), exit 2 + stderr →
 // Kiro BLOCKS the tool call (live-verified contract: only exit 2 blocks; exit 1 and
 // a JSON {"decision":...} on stdout do NOT). It does NOT consume the latch (the
 // conductor may retry within the turn; the next turn bumps the counter so the latch

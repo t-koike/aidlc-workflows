@@ -121,11 +121,9 @@ Attempt to execute the build and test commands documented in the instruction fil
 
 **On success**: Update the Build and Test Summary with actual results (not just instructions).
 
-### Step 11: Completion Handoff
+### Step 11: Update State
 
-Hand completion to `stage-protocol.md` via
-`aidlc __delegate orchestrate report --stage build-and-test --result <outcome>`.
-The engine owns all lifecycle transitions and advancement.
+Update `<record>/aidlc-state.md`: mark Build and Test as `[x]` completed and update "Current Status". Mark CONSTRUCTION phase as complete.
 
 ### Step 12: Completion
 
@@ -183,13 +181,13 @@ Before the approval gate, read memory.md and surface candidates as a
 structured question. For each entry the user keeps, write to the appropriate
 harness destination per `stage-protocol.md` §13 — never to this stage file:
 
-- Prescriptive rule → a practice line under the routed heading in
-  `aidlc/spaces/<active-space>/memory/project.md` (default) or `team.md` (promoted)
+- Prescriptive rule → `.aidlc/rules/aidlc-phase-<phase>.md` (phase-scoped)
+  or `.aidlc/rules/aidlc-<org|team|project>.md` (cross-cutting)
 - Verification check → new manifest at `.aidlc/sensors/aidlc-<id>.md`
   (capability descriptor only — no `applies_to`); add the new id to
   the relevant stage's `sensors: [...]` frontmatter list to wire it
 
-Even when nothing surfaces, still ask the mandatory "Anything to add for next time?" question from stage-protocol.md section 13. Do not infer "Nothing to add." Only after the human answers that question may you proceed to the gate. The memory.md
+If nothing surfaces or the user skips all, proceed to the gate. The memory.md
 file stays in the artefact directory as part of the stage's permanent record.
 
 Stage files are immutable framework artefacts — the ritual writes into the

@@ -79,11 +79,9 @@ Run Construction → Operation verification check:
 - Test coverage against acceptance criteria
 - Write results to `<record>/verification/phase-check-construction.md`
 
-### Step 7: Completion Handoff
+### Step 7: Update State
 
-Hand completion to `stage-protocol.md` via
-`aidlc __delegate orchestrate report --stage ci-pipeline --result <outcome>`.
-The engine owns all lifecycle transitions and advancement.
+Mark ci-pipeline as `[x]` completed in `<record>/aidlc-state.md`.
 
 ### Step 8: Present Completion & Request Approval
 
@@ -122,13 +120,13 @@ Before the approval gate, read memory.md and surface candidates as a
 structured question. For each entry the user keeps, write to the appropriate
 harness destination per `stage-protocol.md` §13 — never to this stage file:
 
-- Prescriptive rule → a practice line under the routed heading in
-  `aidlc/spaces/<active-space>/memory/project.md` (default) or `team.md` (promoted)
+- Prescriptive rule → `.aidlc/rules/aidlc-phase-<phase>.md` (phase-scoped)
+  or `.aidlc/rules/aidlc-<org|team|project>.md` (cross-cutting)
 - Verification check → new manifest at `.aidlc/sensors/aidlc-<id>.md`
   (capability descriptor only — no `applies_to`); add the new id to
   the relevant stage's `sensors: [...]` frontmatter list to wire it
 
-Even when nothing surfaces, still ask the mandatory "Anything to add for next time?" question from stage-protocol.md section 13. Do not infer "Nothing to add." Only after the human answers that question may you proceed to the gate. The memory.md
+If nothing surfaces or the user skips all, proceed to the gate. The memory.md
 file stays in the artefact directory as part of the stage's permanent record.
 
 Stage files are immutable framework artefacts — the ritual writes into the

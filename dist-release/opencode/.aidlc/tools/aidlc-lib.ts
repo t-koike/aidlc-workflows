@@ -676,33 +676,6 @@ export interface TerminalCommand {
   source: "read-only-flag" | "workspace-verb";
 }
 
-// The allowlisted trailing flags `--doctor` accepts (diagnostic export). Kept
-// as a set here so the engine (parseNextFlags) and this classifier — the two
-// terminal-command deciders — stay byte-for-byte in agreement. A fixed
-// allowlist, so an arbitrary token can never ride the read-only path into the
-// tool.
-export const DOCTOR_EXPORT_FLAGS: ReadonlySet<string> = new Set(["--export", "--output"]);
-
-// Collect the allowlisted `--doctor` export args (`--export`, `--output <dir>`)
-// from the token stream after the `--doctor` match, so the seam runs the same
-// command the engine's directive names. Mirrors parseNextFlags in the engine.
-function collectDoctorExportArgs(args: string[], doctorIdx: number): string[] {
-  const extra: string[] = [];
-  for (let j = doctorIdx + 1; j < args.length; j++) {
-    const t = args[j];
-    if (!DOCTOR_EXPORT_FLAGS.has(t)) continue;
-    extra.push(t);
-    if (t === "--output") {
-      const val = args[j + 1];
-      if (val !== undefined && !val.startsWith("--")) {
-        extra.push(val);
-        j++;
-      }
-    }
-  }
-  return extra;
-}
-
 function terminalCommandFromWorkspaceCommand(
   command: WorkspaceCommand,
   originalArgs: string[],
@@ -757,16 +730,7 @@ export function classifyTerminalCommand(args: string[]): TerminalCommand | null 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (READ_ONLY_FLAGS.has(a)) {
-      const subcommand = a.replace(/^--/, "");
-      // --doctor carries allowlisted export args (--export, --output <dir>) so
-      // the documented export surface reaches the tool through the Kiro/Codex
-      // seam too, not only a direct invocation. Carried via `args` (v2's
-      // forwarded-args field), mirrored by the engine's parseNextFlags.
-      if (a === "--doctor") {
-        const extra = collectDoctorExportArgs(args, i);
-        if (extra.length > 0) return { subcommand, source: "read-only-flag", args: extra };
-      }
-      return { subcommand, source: "read-only-flag" };
+      return { subcommand: a.replace(/^--/, ""), source: "read-only-flag" };
     }
   }
   return null;
@@ -778,6 +742,22 @@ export function classifyTerminalCommand(args: string[]): TerminalCommand | null 
 // not attempt shell parsing: English-prose mentions and quoted echoes of command
 // strings match, which is a pre-existing class shared with the old detectors.
 // That direction fails closed: over-detection nudges, never releases.
+
+// Authored methodology uses the native dispatcher's hidden tool route while the
+// public CLI keeps the shorter workflow grammar. Canonicalize only the engine
+// tools these detectors own so both spellings share one classification policy.
+// Other delegated tools remain untouched.
+function canonicalEngineCommand(text: string): string {
+  return text
+    .replace(
+      /\baidlc\s+__delegate\s+(orchestrate|state|jump|bolt|swarm)\b/g,
+      "aidlc $1",
+    )
+    .replace(
+      /\baidlc\s+__delegate\s+utility\s+(status|doctor|version|help)\b/g,
+      "aidlc $1",
+    );
+}
 
 // A workflow-engine tool call: a Bash invocation of legacy
 // aidlc-orchestrate/aidlc-state, a new-grammar `aidlc ...` engine command, or a
@@ -792,7 +772,9 @@ export function isEngineToolCall(name: string, input: unknown): boolean {
       : "";
   // The command text to inspect: a Bash/Shell command, or (for harnesses that
   // surface the tool by name) the tool name itself.
-  const text = /^(bash|shell|execute_bash)$/i.test(name) ? cmd : name;
+  const text = canonicalEngineCommand(
+    /^(bash|shell|execute_bash)$/i.test(name) ? cmd : name,
+  );
   // Fast reject: no AIDLC engine/state/workspace tool named at all -> not a
   // workflow engagement (a chat turn that ran git/cat/ls etc.).
   if (
@@ -955,16 +937,18 @@ const runtimeCompileSelf = new RegExp(
 export function classifyRuntimeCompileCommand(
   command: string,
 ): "reject" | "fire" | "pass" {
-  const invokesRuntime = shellCommandSegments(command)
-    .some((segment) => /^\s*aidlc\s+runtime\b/.test(segment));
+  const canonical = canonicalEngineCommand(command);
+  const invokesRuntime = shellCommandSegments(command).some((segment) =>
+    /^\s*aidlc\s+(?:__delegate\s+)?runtime\s+compile\b/.test(segment)
+  );
   if (runtimeCompileSelf.test(command) || invokesRuntime) {
     return "reject";
   }
   if (
-    runtimeCompileTool.test(command) ||
-    runtimeCompileReport.test(command) ||
-    /\baidlc\s+(?:state|jump|bolt)\b|\baidlc\s+(?:status|doctor|version|help)\b|\baidlc\s+scope\s+change\b|\baidlc\s+config\s+set\b/.test(command) ||
-    /\baidlc\s+report\b|\baidlc\s+orchestrate\s+report\b|\baidlc\s+next\b.*\breport\b/.test(command)
+    runtimeCompileTool.test(canonical) ||
+    runtimeCompileReport.test(canonical) ||
+    /\baidlc\s+(?:state|jump|bolt)\b|\baidlc\s+(?:status|doctor|version|help)\b|\baidlc\s+scope\s+change\b|\baidlc\s+config\s+set\b/.test(canonical) ||
+    /\baidlc\s+report\b|\baidlc\s+orchestrate\s+report\b|\baidlc\s+next\b.*\breport\b/.test(canonical)
   ) {
     // Utility split rationale: the new grammar keeps D2 parity for the public
     // one-shots (status/doctor/version/help fire, because the old regex catches
@@ -3474,59 +3458,6 @@ export function findAllEvents(
     return a.pos - b.pos;
   });
   return results.map(({ timestamp, block }) => ({ timestamp, block }));
-}
-
-// The freshness floor for one stage's swarm evidence: the timestamp of the
-// stage's latest MAIN-WORKFLOW STAGE_STARTED row ("" when none). Rows from a
-// `--single` stage-runner carry `Workflow: single-stage:<slug>` and never move
-// the floor. Every (re-)entry into a stage lands a fresh STAGE_STARTED naming
-// the slug (advance and jump both emit it), so the floor identifies the
-// current attempt. Shared by the emitter (aidlc-swarm.ts stamps it into each
-// SWARM_UNIT_CONVERGED row) and every consumer, so both sides compute the
-// attempt identity with one function.
-export function latestMainWorkflowStageStarted(
-  audit: string,
-  slug: string,
-): string {
-  let since = "";
-  for (const ev of findAllEvents(audit, "STAGE_STARTED")) {
-    if (auditBlockField(ev.block, "Workflow")?.startsWith("single-stage:")) {
-      continue;
-    }
-    if (auditBlockField(ev.block, "Stage") !== slug) continue;
-    // findAllEvents returns chronological order; keep the latest.
-    since = ev.timestamp;
-  }
-  return since;
-}
-
-// The set of units the CURRENT attempt of `slug` has genuinely converged and
-// merged, from the `SWARM_UNIT_CONVERGED` rows `aidlc-swarm.ts finalize`
-// writes. A row counts only when its `Stage` names this slug AND its
-// `Run floor` equals the stage's current attempt floor (exact field match) —
-// a row minted by a late finalize retry against a PRIOR attempt's preserved
-// worktree carries the prior floor and is rejected regardless of its emission
-// timestamp, and another swarm stage's rows fail the Stage match even when
-// the floor degrades to "" (no STAGE_STARTED yet). Rows without the two
-// fields (pre-2.5.0 audit logs) fail closed: the affected units re-fan on the
-// next swarm pass, which finalize's re-verify makes safe. The timestamp check
-// stays as belt-and-braces.
-export function swarmConvergedUnits(
-  projectDir: string,
-  slug: string,
-): Set<string> {
-  const audit = readAllAuditShards(projectDir);
-  if (!audit) return new Set();
-  const floor = latestMainWorkflowStageStarted(audit, slug);
-  const converged = new Set<string>();
-  for (const { timestamp, block } of findAllEvents(audit, "SWARM_UNIT_CONVERGED")) {
-    if (auditBlockField(block, "Stage") !== slug) continue;
-    if ((auditBlockField(block, "Run floor") ?? "") !== floor) continue;
-    if (floor && timestamp < floor) continue;
-    const unit = auditBlockField(block, "Unit name");
-    if (unit) converged.add(unit);
-  }
-  return converged;
 }
 
 // Latest STAGE_STARTED slug in an audit buffer, or null if none. findAllEvents

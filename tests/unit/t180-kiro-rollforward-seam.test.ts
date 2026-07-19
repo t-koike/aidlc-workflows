@@ -11,7 +11,7 @@
 //     argv and their directive is injected; ambiguous freeform invocations
 //     stamp the exact argv in aidlc/.aidlc-forwarding-latch.
 //   pretool-block (preToolUse) — the hard floor: a TRULY BARE advancing
-//     `aidlc-orchestrate.ts next` while the latch is fresh-for-this-turn
+//     `aidlc __delegate orchestrate next` while the latch is fresh-for-this-turn
 //     (latch.turn === counter) → exit 2 (Kiro BLOCK). Any deliberate move
 //     (advancing flag), a stale latch, or no latch at all → exit 0 (inert). A
 //     fresh forwarding latch rejects changed/dropped first-next arguments and
@@ -23,7 +23,7 @@
 // <cwd>/aidlc/ and signals Kiro purely via stdout + exit code. In-process
 // testing would bypass the exact surface being contracted. No live LLM: the
 // verb-intercept args are recovered deterministically from the expanded prompt
-// body (the `aidlc-orchestrate.ts next <ARGS>` forwarding anchor), and
+// body (the `aidlc __delegate orchestrate next <ARGS>` forwarding anchor), and
 // pretool-block reads only the counter/latch files we seed.
 
 import { describe, expect, test } from "bun:test";
@@ -62,10 +62,10 @@ function runAdapter(
 }
 
 // Build an expanded-prompt body carrying the forwarding-loop anchor the seam
-// recovers args from: `… aidlc-orchestrate.ts next <ARGS>` inside a backtick
+// recovers args from: `… aidlc __delegate orchestrate next <ARGS>` inside a backtick
 // code span (exactly what Kiro substitutes $ARGUMENTS into).
 function promptWithNext(args: string): string {
-  return `Step 1: run \`bun .kiro/tools/aidlc-orchestrate.ts next ${args}\` and relay the output.`;
+  return `Step 1: run \`aidlc __delegate orchestrate next ${args}\` and relay the output.`;
 }
 
 const counterPath = (dir: string) => join(dir, "aidlc", ".aidlc-turn-counter");
@@ -241,7 +241,7 @@ describe("t180 pretool-block roll-forward backstop (exit-code contract)", () => 
       );
     }
   }
-  const BARE_NEXT = "bun .kiro/tools/aidlc-orchestrate.ts next";
+  const BARE_NEXT = "aidlc __delegate orchestrate next";
 
   function seedForwarding(
     dir: string,

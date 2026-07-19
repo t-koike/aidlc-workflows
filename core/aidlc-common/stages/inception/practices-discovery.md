@@ -171,14 +171,14 @@ bun {{HARNESS_DIR}}/tools/aidlc-state.ts practices-event \
 Run the section 13 learnings ritual, then:
 
 1. Open the gate before the question:
-   `bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage
+   `{{INVOKE}} __delegate orchestrate report --stage
    practices-discovery --result awaiting-approval`.
-2. Log the affirmation question with `aidlc-log.ts decision`.
+2. Log the affirmation question with `{{INVOKE}} __delegate log decision`.
 3. Present `team-practices.md` and `discovered-rules.md` with two options:
    **Approve** (promote, then continue to `directive.next_stage`) and
    **Request Changes**.
 4. STOP and wait for the human response.
-5. Log the exact answer with `aidlc-log.ts answer`.
+5. Log the exact answer with `{{INVOKE}} __delegate log answer`.
 6. On Request Changes, report `--result rejected --user-input "<feedback>"`,
    revise through the lead (and re-run a support only when its evidence must be
    refreshed), then report `--result revised` before re-presenting the gate.
@@ -193,7 +193,7 @@ Run the section 13 learnings ritual, then:
 The orchestrator does not edit active-space memory directly. Run:
 
 ```bash
-bun {{HARNESS_DIR}}/tools/aidlc-state.ts practices-promote \
+{{INVOKE}} __delegate state practices-promote \
   --team-practices <record>/inception/practices-discovery/team-practices.md \
   --discovered-rules <record>/inception/practices-discovery/discovered-rules.md \
   --affirming-user "<user>"
