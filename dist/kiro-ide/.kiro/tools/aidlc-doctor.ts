@@ -19,6 +19,7 @@ import {
   refreshUpdateState,
   type UpdateState,
 } from "./aidlc-update.ts";
+import { collectPluginStatus } from "./aidlc-plugin.ts";
 import { scanWindowsUninstallJournals } from "./aidlc-windows-uninstall.ts";
 
 function windowsRecoveryCheck(): DoctorCheck | null {
@@ -71,6 +72,37 @@ function updateCheck(state: UpdateState): DoctorCheck {
       : "warn",
     label: `Update: ${state.message}`,
     fix: state.state === "behind" ? "run `aidlc upgrade`" : undefined,
+  };
+}
+
+function pluginCheck(projectDir: string, verbose: boolean): DoctorCheck {
+  const { statuses } = collectPluginStatus(projectDir);
+  const attention = statuses.filter((status) => status.action === "attention");
+  const drift = statuses.filter((status) => status.action === "sync");
+  const detail = verbose && statuses.length > 0
+    ? ` - ${statuses.map((status) => `${status.key ?? "host"}:${status.state}`).join(", ")}`
+    : "";
+  if (attention.length > 0) {
+    return {
+      pass: false,
+      severity: "warn",
+      label: `Plugins: ${attention.length} need attention${detail}`,
+      fix: attention.map((status) => status.message).join("; "),
+    };
+  }
+  if (drift.length > 0) {
+    return {
+      pass: false,
+      severity: "warn",
+      label: `Plugins: ${drift.length} require sync${detail}`,
+      fix: "run `aidlc plugin sync`",
+    };
+  }
+  return {
+    pass: true,
+    label: statuses.length === 0
+      ? "Plugins: no AIDLC plugins installed"
+      : `Plugins: composed state is current${detail}`,
   };
 }
 
@@ -180,6 +212,7 @@ export async function main(argv: string[]): Promise<void> {
   const recovery = windowsRecoveryCheck();
   if (recovery) checks.push(recovery);
   checks.push(updateCheck(update));
+  checks.push(pluginCheck(projectDir, flags.verbose === "true"));
   const report = await collectDoctorReport(projectDir, checks);
   // One fresh analysis, shared by the live report AND the --export writer
   // (issue #575): the structured condition->remedy findings and the
