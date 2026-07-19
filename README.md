@@ -96,10 +96,10 @@ init, offline and proxy use, pins, upgrades, and rollback.
 ### Advanced Manual Projection
 
 The generated `dist/<harness>/` trees remain available for source checkouts.
-They now invoke the installed native `aidlc` command and do not form a
-standalone Bun installation. Install the matching binary first, copy the
-complete projection, and merge root files rather than replacing project-owned
-content.
+They retain the Bun-invoked copy channel, so install Bun before copying the
+complete projection. The installer-backed `aidlc init` path instead consumes
+the native `dist-release/<harness>/` projection and does not require Bun.
+Merge root files rather than replacing project-owned content.
 
 <details>
 <summary><b>Manual projection: Kiro IDE</b></summary>

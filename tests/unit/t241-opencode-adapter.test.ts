@@ -32,6 +32,11 @@ const TEST_AIDLC_COMMAND = [
   process.execPath,
   join(REPO_ROOT, "tests", "harness", "aidlc-hook-driver.ts"),
 ] as const;
+const TEST_ENTRYPOINTS = new Set([
+  "tools/aidlc-state.ts",
+  "tools/aidlc-utility.ts",
+  "hooks/aidlc-stop.ts",
+]);
 const scratch: string[] = [];
 
 afterEach(() => {
@@ -262,6 +267,7 @@ describe("t241 OpenCode adapter state-transition guard", () => {
     const adapter = await createAdapter({
       client,
       directory: root,
+      aidlcCommand: TEST_AIDLC_COMMAND,
       aidlcEntrypoints: new Set([
         ...TEST_ENTRYPOINTS,
         "tools/aidlc-orchestrate.ts",
