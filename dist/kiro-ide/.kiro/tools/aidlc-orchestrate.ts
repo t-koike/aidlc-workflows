@@ -134,7 +134,11 @@ import {
 // import is safe (aidlc-utility.ts main() runs only under import.meta.main,
 // and utility never imports this module - no cycle).
 import { inferScopeFromText } from "./aidlc-utility.ts";
-import { resolveHarnessPath, resolveHarnessRoot } from "./aidlc-runtime-paths.ts";
+import {
+  aidlcToolInvocation,
+  resolveHarnessPath,
+  resolveHarnessRoot,
+} from "./aidlc-runtime-paths.ts";
 
 // Read the workflow state file if it exists, else null. The engine's `next` is
 // a pure read: an absent state file is a legitimate branch (no workflow yet),
@@ -474,7 +478,7 @@ function birthPrintDirective(scope: string, flags: ParsedFlags, description?: st
   const clause = costClause(scope);
   const cost = clause ? ` (${clause})` : "";
   return printDirective(
-    `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${cmd.join(" ")}\` to start the workflow${cost}, then re-run \`next\` to continue.${labelHint}`,
+    `Run \`${aidlcToolInvocation("utility")} ${cmd.join(" ")}\` to start the workflow${cost}, then re-run \`next\` to continue.${labelHint}`,
   );
 }
 
@@ -501,9 +505,9 @@ function composeDispatchDirective(
       `Dispatch the composer agent (${hd}/agents/aidlc-composer-agent.md) as a subagent to propose re-shaping the RUNNING workflow's pending stages` +
         (flags.intent ? ` for: "${flags.intent}".` : "."),
       "The composer reads the live state file's Stage Progress, re-estimates the entropy components from what completed stages resolved, validates the flipped grid with --strict, and proposes SKIP/un-SKIP flips for PENDING, ahead-of-cursor stages only (completed [x], in-progress [-], and skipped [S] stages are frozen; an ADD whose required producer is skipped or behind the cursor is rejected, not proposed).",
-      "BEFORE presenting the gate, write the pending-proposal marker `aidlc/.aidlc-compose-pending` (any content) so the turn can end at the gate; on approve run `bun " +
-        hd +
-        "/tools/aidlc-utility.ts recompose --skip <slugs> --add <slugs>` (comma-separated) and DELETE the marker; on reject/edit-then-resolve delete the marker too.",
+      "BEFORE presenting the gate, write the pending-proposal marker `aidlc/.aidlc-compose-pending` (any content) so the turn can end at the gate; on approve run `" +
+        aidlcToolInvocation("utility") +
+        " recompose --skip <slugs> --add <slugs>` (comma-separated) and DELETE the marker; on reject/edit-then-resolve delete the marker too.",
     );
   } else {
     parts.push(
@@ -521,7 +525,7 @@ function composeDispatchDirective(
     }
   }
   parts.push(
-    `The composer runs \`bun ${hd}/tools/aidlc-utility.ts detect --json\` (read-only scan + scope-registry paths), estimates the five entropy components (intent ambiguity, structural uncertainty, verification entropy, risk, unresolved assumptions) per its persona, and returns a structured proposal: mode matched|custom, scopeName, an ars block (the five component scores with method codekb|fallback), an arsRationale, the per-stage EXECUTE/SKIP grid, a per-SKIP rationale, a summary the validator computed, and two pre-rendered markdown tables (ARS scores with bands; per-stage decisions with reasoning).`,
+    `The composer runs \`${aidlcToolInvocation("utility")} detect --json\` (read-only scan + scope-registry paths), estimates the five entropy components (intent ambiguity, structural uncertainty, verification entropy, risk, unresolved assumptions) per its persona, and returns a structured proposal: mode matched|custom, scopeName, an ars block (the five component scores with method codekb|fallback), an arsRationale, the per-stage EXECUTE/SKIP grid, a per-SKIP rationale, a summary the validator computed, and two pre-rendered markdown tables (ARS scores with bands; per-stage decisions with reasoning).`,
     "Render the proposal to the human as THREE blocks before the approve/edit/reject gate (see the composer block in SKILL.md): (1) the validator's summary line formatted \"<execute> stages EXECUTE / <skip> SKIP, <gates> approval gates\" plus scopeName and mode - use the validator's numbers verbatim, never recount by hand; (2) the composer's ARS score table verbatim, with its method line and arsRationale; (3) the composer's stage-decision table verbatim, with any fold advisories beneath it. Relay the composer's tables and numbers as returned - never recompute, collapse into prose, or drop them. Do NOT write any file and do NOT advance any stage before an explicit approval.",
   );
   return printDirective(parts.join(" "));
@@ -1527,7 +1531,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
       ? ` ${flags.readOnlyArgs.join(" ")}`
       : "";
     emit(printDirective(
-      `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${sub}${extra}\`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run \`next\` and do NOT advance, resume, or run any workflow stage.`,
+      `Run \`${aidlcToolInvocation("utility")} ${sub}${extra}\`, print its output verbatim, then stop. This is a read-only utility, NOT workflow work: do NOT run \`next\` and do NOT advance, resume, or run any workflow stage.`,
     ));
     return;
   }
@@ -1556,7 +1560,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     const [verb, ...tail] = argv;
     const suffix = tail.length > 0 ? ` ${tail.map(shellArg).join(" ")}` : "";
     emit(printDirective(
-      `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${verb}${suffix}\`, print its output verbatim, then stop.`,
+      `Run \`${aidlcToolInvocation("utility")} ${verb}${suffix}\`, print its output verbatim, then stop.`,
     ));
     return;
   }
@@ -1631,7 +1635,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     (getField(stateContent, "Parked") ?? "").trim().length > 0
   ) {
     emit(printDirective(
-      `This workflow is parked. Run \`bun ${harnessDir()}/tools/aidlc-state.ts unpark\` ` +
+      `This workflow is parked. Run \`${aidlcToolInvocation("state")} unpark\` ` +
         "to clear the park marker, then re-run `next --resume` to continue.",
     ));
     return;
@@ -1801,7 +1805,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
       if (flags.depth) parts.push(`--depth ${flags.depth}`);
       if (flags.testStrategy) parts.push(`--test-strategy ${flags.testStrategy}`);
       emit(printDirective(
-        `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${parts.join(" ")}\` to change scope, then print its output verbatim and stop.`,
+        `Run \`${aidlcToolInvocation("utility")} ${parts.join(" ")}\` to change scope, then print its output verbatim and stop.`,
       ));
       return;
     }
@@ -1813,7 +1817,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
       if (flags.depth) parts.push(`--depth ${flags.depth}`);
       if (flags.testStrategy) parts.push(`--test-strategy ${flags.testStrategy}`);
       emit(printDirective(
-        `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${parts.join(" ")}\` to update the configuration, then print its output verbatim and stop.`,
+        `Run \`${aidlcToolInvocation("utility")} ${parts.join(" ")}\` to update the configuration, then print its output verbatim and stop.`,
       ));
       return;
     }
@@ -2735,7 +2739,7 @@ function emitJumpDirective(
     // conductor runs it, the NEXT `next` sees the pivoted state and emits the
     // run-stage for the now-current target.
     emit(printDirective(
-      `Run \`bun ${harnessDir()}/tools/aidlc-jump.ts execute --target ${targetSlug} --direction ${direction} --scope ${scope}\` to perform the jump, then re-run \`next\` to continue from the jump target.`,
+      `Run \`${aidlcToolInvocation("jump")} execute --target ${targetSlug} --direction ${direction} --scope ${scope}\` to perform the jump, then re-run \`next\` to continue from the jump target.`,
     ));
     return;
   }
