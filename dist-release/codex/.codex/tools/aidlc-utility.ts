@@ -15,7 +15,6 @@ import { spawnSync } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { appendAuditEntry, appendAuditEntryUnlocked } from "./aidlc-audit.ts";
-import { adaptLegacyResult, buildBundle, mergeFindings, runDoctorAnalysis } from "./aidlc-doctor-bundle.ts";
 import {
   artifactsRegistryFor,
   findCycles,
@@ -132,13 +131,6 @@ import {
   rollbackVersionPath,
   versionRoot as installedVersionRoot,
 } from "./aidlc-install-paths.ts";
-import {
-  cachedUpdateState,
-  refreshUpdateState,
-} from "./aidlc-update.ts";
-import {
-  scanWindowsUninstallJournals,
-} from "./aidlc-windows-uninstall.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1194,16 +1186,25 @@ function codexNativeTrustHashes(hooksPath: string): string[] {
   return hashes;
 }
 
-async function handleDoctor(
+export type DoctorCheck = {
+  pass: boolean;
+  severity?: "warn";
+  label: string;
+  fix?: string;
+};
+
+export type DoctorReport = {
+  checks: DoctorCheck[];
+  passed: number;
+  warnings: number;
+  failed: number;
+};
+
+export async function collectDoctorReport(
   projectDir: string,
-  flags: Record<string, string | boolean> = {},
-): Promise<void> {
-  const results: Array<{
-    pass: boolean;
-    severity?: "warn";
-    label: string;
-    fix?: string;
-  }> = [];
+  extraChecks: readonly DoctorCheck[] = [],
+): Promise<DoctorReport> {
+  const results: DoctorCheck[] = [];
   const isWindows = process.platform === "win32";
 
   // 1. bun installed — check PATH (Bun.which handles Windows .exe suffix automatically)
@@ -1226,14 +1227,19 @@ async function handleDoctor(
       ? inspectInstalledVersion(installedVersion)
       : { complete: false, distributions: [], reason: "active version marker unavailable" };
     const distributions = installedState.distributions;
+    const runtimeReady = installedState.complete && distributions.length > 0;
     results.push({
-      pass: installedVersion !== null && installedState.complete,
-      label: installedVersion && installedState.complete
+      pass: installedVersion !== null && runtimeReady,
+      label: installedVersion && runtimeReady
         ? `Installed runtime: ${installedVersion} [${distributions.join(", ")}]`
+        : installedVersion && installedState.complete
+        ? `Installed runtime ${installedVersion} has no harness installed`
         : installedVersion
         ? `Installed runtime ${installedVersion} is incomplete: ${installedState.reason ?? "unknown reason"}`
         : "Installed runtime: active version marker unavailable",
-      fix: "re-run the installer with --harness <name>",
+      fix: installedState.complete
+        ? "run `aidlc harness add <name>`"
+        : "re-run the installer with --harness <name>",
     });
     const command = commandPath();
     const expectedExecutable = installedVersion
@@ -1302,26 +1308,6 @@ async function handleDoctor(
         : `Transaction staging: ${abandoned.length} abandoned path(s): ${abandoned.join(", ")}`,
       fix: "finish any active AI-DLC command, then rerun the command to trigger the safe staging sweep",
     });
-
-    if (isWindows) {
-      const uninstallRecovery = scanWindowsUninstallJournals();
-      results.push({
-        pass: uninstallRecovery.pending.length === 0 &&
-          uninstallRecovery.invalid.length === 0,
-        label: uninstallRecovery.pending.length === 0 &&
-            uninstallRecovery.invalid.length === 0
-          ? "Windows uninstall recovery: no pending continuations"
-          : `Windows uninstall recovery: ${
-            uninstallRecovery.pending.length
-          } pending and ${uninstallRecovery.invalid.length} invalid continuation(s): ${
-            [
-              ...uninstallRecovery.pending.map((item) => item.path),
-              ...uninstallRecovery.invalid,
-            ].join(", ")
-          }`,
-        fix: "finish active AI-DLC commands, then run `aidlc version` to resume cleanup",
-      });
-    }
 
     const pinsPath = join(installRoot(), "pins.json");
     let stalePins: string[] = [];
@@ -3150,31 +3136,7 @@ async function handleDoctor(
     // Advisory only; a scan failure must not hide the main doctor report.
   }
 
-  const explicitUpdateCheck = flags["check-updates"] === "true";
-  const interactiveUpdateCheck =
-    process.stdin.isTTY &&
-    process.stdout.isTTY &&
-    flags.json !== "true" &&
-    flags.quiet !== "true";
-  let update = cachedUpdateState();
-  if (
-    explicitUpdateCheck ||
-    (interactiveUpdateCheck &&
-      (update.stale === true ||
-        ["stale", "absent", "unavailable"].includes(update.state)))
-  ) {
-    update = await refreshUpdateState(explicitUpdateCheck ? 15_000 : 750, {
-      offline: flags.offline === "true" ? true : undefined,
-    });
-  }
-  results.push({
-    pass: update.state === "current",
-    severity: update.state === "current" || update.state === "invalid-config"
-      ? undefined
-      : "warn",
-    label: `Update: ${update.message}`,
-    fix: update.state === "behind" ? "run `aidlc upgrade`" : undefined,
-  });
+  results.push(...extraChecks);
 
   // Cold-safe gate: only emit audit when an audit trail already exists. On a
   // pristine project (no audit shard / flat audit.md) doctor prints its health
@@ -3190,80 +3152,17 @@ async function handleDoctor(
     });
   }
 
-  // One fresh analysis, shared by the live report AND the --export writer
-  // (issue #575, Arden #3): the structured condition->remedy findings and the
-  // reconstructed timeline are computed ONCE here. A plain --doctor renders
-  // these findings alongside the legacy check rows, so gate-unresolved /
-  // runtime-graph-stale / cold-hook and the rest surface live too - the live
-  // output and the export can never diverge. The analysis performs no writes.
-  const analysis = runDoctorAnalysis(projectDir);
-
-  // Print report
-  let output = "AI-DLC Health Check\n";
-  output += `${"\u2500".repeat(37)}\n`;
   let passed = 0;
   let warnings = 0;
   let failed = 0;
   for (const r of results) {
     if (r.severity === "warn") {
-      output += `!  ${r.label}`;
-      if (r.fix) output += ` — ${r.fix}`;
-      output += "\n";
       warnings++;
     } else if (r.pass) {
-      output += `\u2713  ${r.label}\n`;
       passed++;
     } else {
-      output += `\u2717  ${r.label}`;
-      if (r.fix) output += ` — ${r.fix}`;
-      output += "\n";
       failed++;
     }
-  }
-  // Structured diagnosis findings (workflow timeline analysis) are ADVISORY and
-  // never change doctor's exit code: they render for visibility but do not count
-  // toward `failed`. Only the legacy environment/config checks above drive the
-  // exit status, so a plain `/aidlc --doctor` keeps its pre-existing contract \u2014
-  // a workflow-level diagnosis (which can be a soft, workflow-in-progress signal)
-  // must not flip the exit code that CI and scripts gate on. Info is omitted from
-  // the live view to keep it terse; the export carries the full set.
-  const diagErrors = analysis.findings.filter((f) => f.severity === "error");
-  const diagWarnings = analysis.findings.filter((f) => f.severity === "warning");
-  if (diagErrors.length > 0 || diagWarnings.length > 0) {
-    output += `${"\u2500".repeat(37)}\n`;
-    output += "Workflow diagnosis (advisory):\n";
-    for (const f of diagErrors) {
-      output += `\u2717  [${f.id}] ${f.summary}`;
-      if (f.remedy) output += ` (${f.remedy})`;
-      output += "\n";
-    }
-    for (const f of diagWarnings) {
-      output += `!  [${f.id}] ${f.summary}\n`;
-    }
-  }
-
-  output += `${"\u2500".repeat(37)}\n`;
-  output += `${passed} passed, ${warnings} warnings, ${failed} failed\n`;
-
-  if (flags.json) {
-    const code = update.state === "invalid-config" ? 2 : failed > 0 ? 1 : 0;
-    process.stdout.write(`${JSON.stringify({
-      schemaVersion: 1,
-      ok: code === 0,
-      code,
-      status: failed > 0 ? "failed" : warnings > 0 ? "warning" : "ok",
-      message: `${passed} passed, ${warnings} warnings, ${failed} failed`,
-      data: {
-        passed,
-        warnings,
-        failed,
-        checks: results,
-      },
-    })}\n`);
-  } else if (flags.quiet) {
-    process.stdout.write(`${passed} passed, ${warnings} warnings, ${failed} failed\n`);
-  } else {
-    process.stdout.write(output);
   }
 
   // Audit only if audit.md already existed when doctor started (cold-safe —
@@ -3276,64 +3175,7 @@ async function handleDoctor(
     });
   }
 
-  // --export: after the live report, write a redacted diagnostic report from
-  // the SAME analysis this run already computed (issue #575). No second read,
-  // no cached diagnosis. The export write never changes doctor's exit code.
-  // `--export` is a bare boolean flag; accept it whether the arg parser recorded
-  // it as "true" (bare) or a stray token followed it, so a trailing word can
-  // never silently disable the export.
-  if ("export" in flags) {
-    try {
-      const tsToken = fsSafeTimestamp();
-      // A bare `--output` (no value) parses to "true"; treat that as an error
-      // rather than creating a directory literally named "true".
-      if (flags.output === "true") {
-        throw new Error("--output requires a directory path (e.g. --output /tmp/aidlc-report)");
-      }
-      const outParent = flags.output
-        ? flags.output
-        : join(projectDir, "aidlc", "diagnostics");
-      mkdirSync(outParent, { recursive: true });
-      // Merge the legacy environment/config checks (bun present, hooks wired,
-      // settings intact) into the exported analysis so report.md/report.json
-      // carry the SAME findings the live report shows — the bundle exists so
-      // the maintainer does NOT need the user's project, so a failing env check
-      // must reach it. The live render (above) and the exit code are untouched;
-      // this only enriches what buildBundle serializes. (Arden round-3 #1.)
-      const analysisForExport = {
-        ...analysis,
-        findings: mergeFindings(results.map(adaptLegacyResult), analysis.findings),
-      };
-      const report = buildBundle(outParent, analysisForExport, tsToken);
-      let out = "\nDiagnostic report created:\n";
-      out += `  ${report.archivePath ?? report.bundleDir}\n\n`;
-      out += "Findings:\n";
-      const topFindings = report.findings.filter((f) => f.severity !== "info").slice(0, 20);
-      if (topFindings.length === 0) {
-        out += "  (no errors or warnings)\n";
-      } else {
-        for (const f of topFindings) out += `  ${f.severity.toUpperCase()} ${f.id}\n`;
-      }
-      out += "\nNo source files or artifact bodies were included.\n";
-      if (report.manualShareNote) out += `\n${report.manualShareNote}\n`;
-      process.stdout.write(out);
-    } catch (e) {
-      // Export failure must not mask the live doctor result; report and go on.
-      process.stdout.write(`\nDiagnostic report could not be created: ${errorMessage(e)}\n`);
-    }
-  }
-
-  // Exit non-zero on any check failure so CI and scripts get a clear
-  // signal. Doctor's stdout carries the diagnostic regardless of exit
-  // code — the orchestrator's tool-failure handler was updated in this
-  // same change to print stdout (not stderr) for doctor.
-  process.exit(update.state === "invalid-config" ? 2 : failed > 0 ? 1 : 0);
-}
-
-// A filesystem-safe UTC timestamp token (isoTimestamp has colons that some
-// filesystems reject in names): 2026-07-14T15:26:31Z → 20260714T152631Z.
-function fsSafeTimestamp(): string {
-  return isoTimestamp().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  return { checks: results, passed, warnings, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -5791,7 +5633,7 @@ export async function main(argv: string[]): Promise<void> {
       handleStatus(projectDir, flags);
       break;
     case "doctor":
-      await handleDoctor(projectDir, flags);
+      await (await import("./aidlc-doctor.ts")).main(rawArgs);
       break;
     case "intent-birth":
       handleIntentBirth(projectDir, flags);
