@@ -88,7 +88,7 @@ fields that carry the structural weight:
 The body opens with `## Steps` — the imperative prose the lead agent follows.
 The `## Sensors` and `## Learn` compartments come after it. For the complete
 field table, types, and constraints, see
-[Field reference — when to use](../reference/15-stage-definition.md#field-reference--when-to-use).
+[Field reference — when to use](../reference/15-stage-definition.md#field-reference-when-to-use).
 
 ### 3. Wire the dependency edges so the graph places it
 
@@ -116,7 +116,7 @@ you never edit `stage-graph.json` by hand to position it. The nuances of
 `requires_stage`, `consumes[].required`, `consumes[].conditional_on`, and
 `for_each` (including how aggregation is *inferred* rather than declared) are
 covered in
-[Field reference — when to use](../reference/15-stage-definition.md#field-reference--when-to-use).
+[Field reference — when to use](../reference/15-stage-definition.md#field-reference-when-to-use).
 
 ### 4. Regenerate the harnesses, so `stage-graph.json` recompiles
 

@@ -225,7 +225,7 @@ It checks: prerequisite (`bun`), hook availability (every hook `settings.json` w
 
 When a workflow has issues, `--doctor` also prints a **Workflow diagnosis** section listing structured findings (unresolved gates, a stale or missing runtime graph, cold hooks, and similar "it will not advance" causes) — the same analysis `--doctor --export` writes to its report.
 
-See [CLI Commands](12-cli-commands.md#aidlc---doctor--health-check) for full details on what each check validates and how to fix failures.
+See [CLI Commands](12-cli-commands.md#aidlc-doctor-health-check) for full details on what each check validates and how to fix failures.
 
 ---
 
@@ -259,7 +259,7 @@ deterministic condition→remedy rules. The two most common causes it catches:
 
 `report.md` inside the report lists every finding with a remedy; a remedy that
 names a recovery bypass (such as an `AIDLC_DISABLE_*` env var) is flagged
-as not safe to automate. See [CLI Commands](12-cli-commands.md#aidlc---doctor---export--write-a-diagnostic-report)
+as not safe to automate. See [CLI Commands](12-cli-commands.md#aidlc-doctor-export-write-a-diagnostic-report)
 for the full report contents and safety model.
 
 ---

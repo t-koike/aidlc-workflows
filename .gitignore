@@ -12,6 +12,11 @@ dist/kiro/aidlc-docs/
 dist/codex/aidlc-docs/
 build/
 
+# Zensical documentation-site build output (`uv run zensical build`; deployed by
+# .github/workflows/docs.yml, never committed)
+/site/
+/.cache/
+
 # Sample/test projects
 dist/claude/todo-app/
 

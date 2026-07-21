@@ -161,7 +161,7 @@ Mirroring the reference recipe, here is the workflow end to end.
    where it leads or supports, then recompile (`bun .claude/tools/aidlc-graph.ts compile`)
    so `stage-graph.json` regenerates. Never hand-edit `stage-graph.json` — it is
    a build artifact, and the next compile overwrites a manual change (see
-   [Adding a Stage](02-adding-a-stage.md#4-compile-so-stage-graphjson-regenerates)).
+   [Adding a Stage](02-adding-a-stage.md#4-regenerate-the-harnesses-so-stage-graphjson-recompiles)).
    This is the step that makes it active.
 4. **Document the team-knowledge directory** — note that a team adds its
    standards under the space-level `aidlc/knowledge/<slug>-agent/`. The engine

@@ -42,7 +42,7 @@ A few notes on the calls that bite hardest:
 - **`for_each` names the iteration artifact.** The five Construction stages that run once per Unit declare `for_each: unit-of-work`; the other stages omit the field and run once. Aggregation is inferred from the graph, not declared.
 - **`lead_agent` and `support_agents` validate against `core/agents/*.md`.** There's no hardcoded list — adding an agent means dropping its file in that directory (see [Adding an Agent](03-adding-an-agent.md)).
 
-This is the orientation, not the contract. For the complete field table with types, constraints, and the reserved-namespace fields AI-DLC will add later, read [Field reference — when to use](../reference/15-stage-definition.md#field-reference--when-to-use) in the Developer Reference.
+This is the orientation, not the contract. For the complete field table with types, constraints, and the reserved-namespace fields AI-DLC will add later, read [Field reference — when to use](../reference/15-stage-definition.md#field-reference-when-to-use) in the Developer Reference.
 
 ---
 

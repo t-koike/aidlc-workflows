@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.6] - 2026-07-22
+
+The documentation site (https://awslabs.github.io/aidlc-workflows/) moves from the legacy branch-built Jekyll rendering to a Zensical (Material theme) build deployed by GitHub Actions: full-text search, light/dark mode, and a structured sidebar that groups the User Guide, Harness Engineer Guide, and Developer Reference into subsections. No framework behavior changes; nothing to re-copy into projects.
+
+* New `.github/workflows/docs.yml` builds `docs/` with `zensical build` (pinned via the root `pyproject.toml`/`zensical.toml`) and deploys to GitHub Pages on every push to `v2` that touches `docs/**`. Activating it requires flipping the repository's Pages source from "Deploy from a branch: v2" to "GitHub Actions".
+* **Breaking (bookmarks/links only):** published page URLs change from `/docs/<set>/<page>.html` to `/<set>/<page>/`, and the roadmap moves from `/roadmap.html` to `/roadmap/` (`roadmap.md` now lives at `docs/roadmap.md`). Repository files outside `docs/` (e.g. `dist/` agent sources) are no longer rendered as pages.
+* The committed markdown keeps relative links to files outside `docs/` (so local clones navigate normally); the deploy workflow rewrites them to GitHub blob URLs at build time via the new `scripts/docs-rewrite-links.ts`, which fails the deploy if a linked file is missing.
 ## [2.5.5] - 2026-07-22
 
 Reviewer-bearing stages now have an engine-enforced, auditable verification boundary on every completion route. Interactive, per-unit, unit-major, and autonomous Construction runs record reviewer dispatch and verdict events, and stale or incomplete reviews refuse completion without adding another human checkpoint. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.

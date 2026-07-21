@@ -6,6 +6,7 @@
     "harness/*/manifest.ts",
     "harness/*/emit.ts",
     "scripts/package.ts",
+    "scripts/docs-rewrite-links.ts",
     "tests/fixtures/v05-mr9-sensor-fire/scripts/*.ts"
   ],
   "project": [
