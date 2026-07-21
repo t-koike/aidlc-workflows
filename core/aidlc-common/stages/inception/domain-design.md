@@ -1,8 +1,8 @@
 ---
-slug: application-design
+slug: domain-design
 phase: inception
 execution: CONDITIONAL
-condition: Execute when new components or services are needed, or service layer design is required. Skip when changes are modifications to existing components only.
+condition: Execute when new components or logical building blocks are needed. Skip when changes are modifications to existing components only.
 lead_agent: aidlc-architect-agent
 support_agents:
   - aidlc-aws-platform-agent
@@ -12,10 +12,6 @@ reviewer: aidlc-architecture-reviewer-agent
 reviewer_max_iterations: 2
 produces:
   - components
-  - component-methods
-  - services
-  - component-dependency
-  - decisions
 consumes:
   - artifact: requirements
     required: true
@@ -41,19 +37,23 @@ scopes:
   - mvp
   - workshop
 inputs: <record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced), RE artifacts (if brownfield)
-outputs: components.md, component-methods.md, services.md, component-dependency.md, decisions.md (under this stage's record dir, engine-resolved)
+outputs: components.md (under this stage's record dir, engine-resolved) — carries a fenced ```yaml component catalogue plus a human-readable mermaid diagram and summary table
 ---
 
-# Application Design
+# Domain Design
 
 MANDATORY: Follow stage-protocol.md for approval gates, question format, and completion messages.
+
+Identify and detail the **logical building blocks** of the system — the components you will write code for. A component is a bounded piece of software with its own business logic, entities, and lifecycle: **code you write, not infrastructure you deploy.** Databases, caches, queues, and third-party services are dependencies OF components, not components themselves.
+
+This stage does NOT decide deployment topology (monolith, microservices, serverless, etc.) — that is Units Generation's job. Domain Design produces the building blocks so the team can then decide how to group them into deployable units. It also does not choose the tech stack or NFR patterns — those belong to the NFR and infrastructure stages.
 
 ## Steps
 
 ### Step 1: Load Agent Personas
 
 Load aidlc-architect-agent persona from `agents/aidlc-architect-agent.md` and knowledge from `{{HARNESS_DIR}}/knowledge/aidlc-architect-agent/`.
-Load aidlc-aws-platform-agent persona from `agents/aidlc-aws-platform-agent.md` and knowledge from `{{HARNESS_DIR}}/knowledge/aidlc-aws-platform-agent/` for AWS service mapping.
+Load aidlc-aws-platform-agent persona from `agents/aidlc-aws-platform-agent.md` and knowledge from `{{HARNESS_DIR}}/knowledge/aidlc-aws-platform-agent/` for dependency-service awareness (a component may depend on a managed service — that dependency is captured, but the service itself is not a component).
 Load aidlc-design-agent persona from `agents/aidlc-design-agent.md` and knowledge from `{{HARNESS_DIR}}/knowledge/aidlc-design-agent/` for UI component specifications and UX-informed design constraints.
 
 ### Step 2: Load Prior Context
@@ -64,11 +64,11 @@ Load aidlc-design-agent persona from `agents/aidlc-design-agent.md` and knowledg
 
 ### Step 3: Create Design Plan with Questions
 
-Create `<record>/inception/application-design/application-design-questions.md` with context-appropriate questions using [Answer]: tag format:
-- Component boundary decisions
-- Architectural style preferences (if not already decided)
-- Service communication patterns (sync vs. async, REST vs. gRPC vs. events)
-- Data ownership and storage strategy
+Create `<record>/inception/domain-design/domain-design-questions.md` with context-appropriate questions using [Answer]: tag format:
+- Component boundary decisions (what is a distinct building block, and why)
+- Entity ownership (each entity has exactly one owning component — ambiguity is a design smell)
+- Component responsibilities (what business logic each block owns)
+- Interaction between components (which component calls which, and why)
 - Integration approach with existing components (brownfield)
 - UI component structure (if user-facing, informed by UX designer perspective)
 
@@ -79,67 +79,69 @@ Collect answers following stage-protocol.md §3 question flow (offer interaction
 - Create follow-up questions if ANY ambiguity found
 - Resolve all ambiguities before proceeding
 
-### Step 5: Generate Design Artifacts
+### Step 5: Generate the Component Catalogue
 
-Create 5 design artifacts in `<record>/inception/application-design/`:
+Create `<record>/inception/domain-design/components.md`. This single artifact carries both a machine-readable catalogue and the human-readable view.
 
-**components.md:**
-- Component names and purposes
-- Component responsibilities (what each component owns)
-- Component interfaces (public API surface)
-- Component boundaries and ownership
+**Part A — machine-readable catalogue (fenced `yaml` block).** Author a fenced ```yaml block near the top of the file listing every component. This block is the source of truth; the human view below is derived from it. Each component carries a behaviour description, its dependencies (components it calls) and dependent components (components that call it), and the entities it owns with their attributes:
 
-**component-methods.md:**
-- Method signatures for each component's public interface
-- High-level method purposes (detailed business rules belong in Functional Design)
-- Input/output types
-- Error handling approach per method
+```yaml
+components:
+  - name: <ComponentName>
+    behaviour: <what this component does — business rules, validation, security constraints, key behaviours; be specific>
+    depends_on:
+      - component: <component it calls>
+        interaction: <why and what for>
+    dependents:
+      - component: <component that calls this one>
+        interaction: <why and what for>
+    entities:
+      - name: <EntityName>
+        attributes: [<attribute-name>, <attribute-name>]
+  - name: <AnotherComponent>
+    behaviour: <...>
+    depends_on: []
+    dependents: []
+    entities:
+      - name: <EntityName>
+        attributes: [<attribute-name>]
+```
 
-**services.md:**
-- Service definitions and responsibilities
-- Orchestration patterns (choreography vs. orchestration)
-- Service communication contracts
-- Service lifecycle and scaling characteristics
+Rules for the block: name each component exactly once; every `component:` named in a `depends_on`/`dependents` list must be a declared component; a component may not depend on itself; every entity has exactly one owning component (no entity appears under two components).
 
-**component-dependency.md:**
-- Dependency matrix (which components depend on which)
-- Communication patterns between components (sync, async, event-driven)
-- Data flow between components
-- Shared resource identification
+**Part B — human-readable view (below the block).** Derive these sections from the catalogue — same data, presented for humans:
 
-**decisions.md:**
-- Architecture Decision Records (ADRs) for each significant design choice
-- Each ADR includes: Context, Decision, Consequences, Alternatives Considered
-- Trade-off analysis for key decisions
-- Reversibility assessment (easy to change vs. locked in)
+- **Component Diagram** — a `mermaid` diagram showing which components call which, with labelled edges.
+- **Component Summary** — a table: `| Component | Purpose | Dependencies | Entities Owned |`.
+- **Rationale** — a table explaining why each component is a separate building block (distinct lifecycle, distinct concern, distinct data ownership, distinct change rate — pick what applies).
 
-#### Architecture options (when >1 viable approach)
+#### Component-boundary options (when >1 viable decomposition)
 
-When a design choice has more than one viable approach, present the
+When a decomposition choice has more than one viable approach, present the
 trade-off before recording the decision:
 
 - Option A — <name>: pros / cons / reversibility
 - Option B — <name>: pros / cons / reversibility
-- Recommendation: <option> because <trade-off tied to NFRs>
+- Recommendation: <option> because <trade-off tied to responsibilities/change rate>
 
-The team chooses at the gate (ownership stays with the team), then append
-the chosen option plus an **Alternatives Rejected** section to the ADR in
-decisions.md.
+The team chooses at the gate (ownership stays with the team), then record the
+chosen decomposition plus an **Alternatives Rejected** note in the Rationale
+section of components.md.
 
-When only one option is viable, state why and skip the block.
+When only one decomposition is viable, state why and skip the block.
 
 ### Step 6: Completion Handoff
 
 Hand completion to `stage-protocol.md` via
-`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage application-design --result <outcome>`.
+`bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage domain-design --result <outcome>`.
 The engine owns all lifecycle transitions and advancement.
 
 ### Step 7: Present Completion & Request Approval
 
 Use stage-protocol.md completion template with completion emoji: :building_construction:
-- Summary of design artifacts produced
-- Key architectural decisions highlighted
-- Review path: `<record>/inception/application-design/`
+- Summary of components identified (count, key boundaries, entity ownership)
+- Key boundary decisions highlighted
+- Review path: `<record>/inception/domain-design/`
 - Structured approval question with options:
   - Approve (continue to next stage)
   - Request Changes (provide revision feedback)
@@ -151,9 +153,9 @@ before re-entering the approval flow.
 
 ## Sensors
 
-This stage's outputs are markdown artefacts under `<record>/inception/application-design/`.
+This stage's output is a markdown artefact under `<record>/inception/domain-design/`.
 
-The imported sensors check those outputs:
+The imported sensors check that output:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings). Failure mode: missing headings emit `SENSOR_FAILED` with detail at `<record>/.aidlc-sensors/<stage-slug>/required-sections-<iso>.md`.
 - **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter. Failure mode: missing upstream references emit `SENSOR_FAILED` listing each unreferenced artefact (this stage consumes `requirements`, `stories`, `team-practices`).
