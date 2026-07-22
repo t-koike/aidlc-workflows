@@ -7,6 +7,7 @@ import {
   activeIntent,
   appendSlug,
   appendUnderHeading,
+  auditBlockField,
   type CheckboxState,
   codekbDir,
   countCheckboxes,
@@ -32,8 +33,6 @@ import {
   parseRefsList,
   parseStateStageSuffixes,
   readAllAuditShards,
-  readBoltDagUnitKinds,
-  readBoltDagUnits,
   readStateFile,
   recordDir,
   relativeMemoryPath,
@@ -41,6 +40,7 @@ import {
   removeField,
   removeSlug,
   replaceSection,
+  resolveBoltDag,
   resolveProjectDir,
   resolveStage,
   setCheckbox,
@@ -282,6 +282,48 @@ function producesArtifactFile(
     });
   }
   return produces.some((name) => norm.endsWith(`/${stage.slug}/${name}.md`));
+}
+
+// Resolve the unit targeted by a declared produces[] write. `undefined` means
+// the file does not belong to this stage, `null` means a matching stage-level
+// artifact, and a string names the per-unit Construction target.
+function producesArtifactUnit(
+  stage: {
+    slug: string;
+    for_each?: string;
+    produces?: string[];
+    optional_produces?: string[];
+  },
+  file: string,
+  recordedRepos: ReadonlySet<string>,
+): string | null | undefined {
+  const reviewedArtifacts = [
+    ...(stage.produces ?? []),
+    ...(stage.optional_produces ?? []),
+  ];
+  if (
+    !producesArtifactFile(
+      { slug: stage.slug, produces: reviewedArtifacts },
+      file,
+      recordedRepos,
+    )
+  ) {
+    return undefined;
+  }
+  if (stage.for_each !== "unit-of-work") return null;
+
+  const norm = file.replace(/\\/g, "/");
+  for (const name of reviewedArtifacts) {
+    const suffix = `/${stage.slug}/${name}.md`;
+    if (!norm.endsWith(suffix)) continue;
+    const parent = norm.slice(0, -suffix.length);
+    const marker = "/construction/";
+    const markerIdx = parent.lastIndexOf(marker);
+    if (markerIdx === -1) return null;
+    const unit = parent.slice(markerIdx + marker.length);
+    return unit.length > 0 && !unit.includes("/") ? unit : null;
+  }
+  return null;
 }
 
 // The gate-revision backstop predicate (the reconciliation half of the
@@ -937,13 +979,13 @@ function isSettledSwarmForArtifactGuard(
   if (!scope) return false;
   const first = firstInScopeStageOfPhase("construction", scope);
   if (first !== null && first.slug === stage.slug) return false; // skeleton gate
-  const units = readBoltDagUnits(pd);
-  if (units === null || units.length === 0) return false;
+  const resolution = resolveBoltDag(pd);
+  if (resolution.state !== "ok" || resolution.units.length === 0) return false;
   // Shared attempt-scoped read (aidlc-lib.ts): a row counts only when its
   // Stage names this slug AND its Run floor equals the current attempt's
   // floor, so stale-attempt and cross-stage rows never satisfy the guard.
   const converged = swarmConvergedUnits(pd, stage.slug);
-  return units.every((unit) => converged.has(unit));
+  return resolution.units.every((unit) => converged.has(unit));
 }
 
 // Deterministic off-switch for the approve-time gate-revision backstop (mirrors
@@ -1022,11 +1064,15 @@ function producesArtifactsExist(
   const produces = stage.produces ?? [];
   if (produces.length === 0) return true; // nothing declared -> nothing to verify
   if (stage.for_each === "unit-of-work" && stage.produces_kinds !== undefined) {
-    const units = readBoltDagUnits(pd);
-    const kinds = readBoltDagUnitKinds(pd);
-    if (units !== null && kinds !== null) {
-      const allVacuous = units.every(
-        (u) => filterProducesByKind(stage.produces_kinds, produces, kinds.get(u) ?? null).length === 0,
+    const resolution = resolveBoltDag(pd);
+    if (resolution.state === "ok" && resolution.unitKinds !== null) {
+      const allVacuous = resolution.units.every(
+        (u) =>
+          filterProducesByKind(
+            stage.produces_kinds,
+            produces,
+            resolution.unitKinds?.get(u) ?? null,
+          ).length === 0,
       );
       if (allVacuous) return true;
     }
@@ -1216,6 +1262,192 @@ function verifyStageArtifacts(
   }
 }
 
+// --- Reviewer precondition (§12a / RFC Track 1) -----------------------------
+//
+// A stage that declares a `reviewer` cannot be approved until the reviewer step
+// actually ran — proven by a terminal REVIEW_COMPLETED row (written by the tool
+// actor `aidlc-log.ts review --verdict`). Hard on the review HAVING HAPPENED,
+// soft on the verdict (a NOT-READY-after-cap still lets the human approve).
+//
+// This lives beside the artifact guard in all four completing handlers, not in
+// orchestrate's report: direct recovery calls must not bypass it (issue #366).
+//
+// The audit read is FLOORED (mirrors swarmConvergedUnits / hasStageAuditEvent):
+// only REVIEW_COMPLETED rows recorded AFTER the stage's latest STAGE_STARTED,
+// any later GATE_REJECTED, and the latest relevant produces[] write count.
+// Per-unit artifact writes invalidate only that unit's receipt. Without these
+// floors a stale review from a prior stage-run, before a reject/revise, or
+// before an artifact edit would clear the gate for work nobody re-reviewed.
+//
+// The row must match BOTH Stage AND Reviewer (a row naming the wrong reviewer —
+// a typo, or the conductor self-certifying — must not satisfy it). On per-unit
+// stages (for_each: unit-of-work) one review per stage is not enough: the
+// reviewer fires once PER UNIT, so EVERY unit must carry its own terminal review.
+//
+function verifyReviewerPrecondition(
+  pd: string,
+  content: string,
+  stage: {
+    slug: string;
+    name: string;
+    phase: string;
+    for_each?: string;
+    reviewer?: string;
+    produces?: string[];
+    optional_produces?: string[];
+    produces_kinds?: Record<string, string[]>;
+  }
+): void {
+  if (!stage.reviewer) return; // stage declares no reviewer — nothing to enforce
+
+  const reviewer = stage.reviewer;
+  const audit = readAllAuditShards(pd);
+  if (audit.length === 0) {
+    reviewerPreconditionError(stage.slug, reviewer);
+  }
+
+  // Build ONE position-tiebroken event stream (the same interleave idiom
+  // unrecordedRevisionSinceGateOpen uses) — a timestamp-only floor is unsafe
+  // because isoTimestamp() is second-precision, so a review and the reject that
+  // should invalidate it can share a timestamp and a `<` compare would keep the
+  // stale review. Ordering by (timestamp, buffer position) breaks that tie.
+  const RELEVANT = new Set([
+    "WORKFLOW_STARTED",
+    "STAGE_STARTED",
+    "STAGE_JUMPED",
+    "GATE_REJECTED",
+    "ARTIFACT_CREATED",
+    "ARTIFACT_UPDATED",
+    "REVIEW_COMPLETED",
+  ]);
+  const blocks = audit.replace(/\r\n/g, "\n").split(/\n---\n/);
+  const events: { pos: number; ts: string; event: string; block: string }[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const ev = auditBlockField(blocks[i], "Event");
+    if (!ev || !RELEVANT.has(ev)) continue;
+    events.push({ pos: i, ts: auditBlockField(blocks[i], "Timestamp") ?? "", event: ev, block: blocks[i] });
+  }
+  events.sort((a, b) => (a.ts !== b.ts ? (a.ts < b.ts ? -1 : 1) : a.pos - b.pos));
+
+  const perUnit = stage.for_each === "unit-of-work";
+  const unitMajor =
+    perUnit && getField(content, "Construction Iteration")?.trim() === "unit-major";
+
+  // Unit-major may author a later stage's per-unit artifacts before that
+  // stage's STAGE_STARTED row exists. Its attempt floor therefore uses the
+  // current workflow, jumps, and gate rejections but ignores STAGE_STARTED.
+  // Stage-major and non-per-unit flows additionally floor at STAGE_STARTED.
+  //
+  // WORKFLOW_STARTED and STAGE_JUMPED floor deliberately stage-AGNOSTIC: any
+  // jump invalidates every stage's reviews, including stages the jump never
+  // re-opens. That over-invalidation is harmless (a stage that stays [x] never
+  // re-completes, so its stale floor is never consulted) and it is what closes
+  // the redo-jump hole: a backward jump re-opens stages WITHOUT emitting their
+  // GATE_REJECTED or (until re-entry) STAGE_STARTED, so a stage-scoped floor
+  // would accept the prior attempt's reviews. Fail-closed over precise.
+  let floorIdx = -1;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.event === "WORKFLOW_STARTED" || e.event === "STAGE_JUMPED") {
+      floorIdx = i;
+      continue;
+    }
+    if (auditBlockField(e.block, "Stage") !== stage.slug) continue;
+    if (e.event === "STAGE_STARTED" && !unitMajor) {
+      if (auditBlockField(e.block, "Workflow")?.startsWith("single-stage:")) continue;
+      floorIdx = i;
+    } else if (e.event === "GATE_REJECTED") {
+      floorIdx = i;
+    }
+  }
+
+  // Collect fresh matching terminal reviews after the attempt floor. A later
+  // declared-artifact write clears the matching receipt. For per-unit stages,
+  // the path's construction/<unit>/ segment scopes invalidation to that unit;
+  // an ambiguous matching path fails closed by clearing every unit receipt.
+  const recordedRepos = new Set(intentRepos(pd));
+  const reviewedUnits = new Set<string>();
+  let sawStageReview = false;
+  for (let i = floorIdx + 1; i < events.length; i++) {
+    const e = events[i];
+    if (e.event === "ARTIFACT_CREATED" || e.event === "ARTIFACT_UPDATED") {
+      const file = auditBlockField(e.block, "File");
+      if (!file) continue;
+      const targetUnit = producesArtifactUnit(stage, file, recordedRepos);
+      if (targetUnit === undefined) continue;
+      if (!perUnit) {
+        sawStageReview = false;
+      } else if (targetUnit === null) {
+        reviewedUnits.clear();
+      } else {
+        reviewedUnits.delete(targetUnit);
+      }
+      continue;
+    }
+    if (e.event !== "REVIEW_COMPLETED") continue;
+    if (auditBlockField(e.block, "Workflow")?.startsWith("single-stage:")) continue;
+    if (auditBlockField(e.block, "Stage") !== stage.slug) continue;
+    if (auditBlockField(e.block, "Reviewer") !== reviewer) continue;
+    const verdict = auditBlockField(e.block, "Verdict");
+    if (verdict !== "READY" && verdict !== "NOT-READY") continue;
+    sawStageReview = true;
+    const unit = auditBlockField(e.block, "Unit");
+    if (unit) reviewedUnits.add(unit);
+  }
+
+  if (!perUnit) {
+    if (!sawStageReview) reviewerPreconditionError(stage.slug, reviewer);
+    return;
+  }
+
+  const resolution = resolveBoltDag(pd);
+  if (resolution.state === "malformed") {
+    error(
+      `Refusing to complete "${stage.slug}": its per-unit review set cannot be ` +
+        `resolved because unit-of-work-dependency.md is ${resolution.reason} ` +
+        `(${resolution.detail}). Fix the fenced units block before completing.`,
+    );
+  }
+  if (resolution.state === "none" || resolution.units.length === 0) {
+    if (!sawStageReview) reviewerPreconditionError(stage.slug, reviewer);
+    return;
+  }
+
+  // A kind-pruned unit with no applicable produces[] never receives a stage
+  // directive, so it cannot owe a review. If every unit is vacuous, no
+  // stage-level fallback review is required.
+  const produces = stage.produces ?? [];
+  const reviewUnits = resolution.units.filter(
+    (unit) =>
+      filterProducesByKind(
+        stage.produces_kinds,
+        produces,
+        resolution.unitKinds?.get(unit) ?? null,
+      ).length > 0,
+  );
+  if (reviewUnits.length === 0) return;
+
+  const missing = reviewUnits.filter((u) => !reviewedUnits.has(u));
+  if (missing.length > 0) {
+    error(
+      `Refusing to complete "${stage.slug}": it declares a reviewer (${reviewer}) but ` +
+        `${missing.length} of ${reviewUnits.length} applicable units have no fresh recorded ` +
+        `review (${missing.join(", ")}). The reviewer fires once per unit; record ` +
+        `each with \`aidlc-log.ts review --stage ${stage.slug} --unit <unit> --reviewer ` +
+        `${reviewer} --verdict <READY|NOT-READY>\` before approving.`
+    );
+  }
+}
+
+function reviewerPreconditionError(slug: string, reviewer: string): never {
+  error(
+    `Refusing to complete "${slug}": it declares a reviewer (${reviewer}) but no ` +
+      `fresh REVIEW_COMPLETED is recorded for it. Invoke the reviewer ` +
+      `(stage-protocol §12a) and record the verdict with \`aidlc-log.ts review --stage ` +
+      `${slug} --reviewer ${reviewer} --verdict <READY|NOT-READY>\` before completing.`
+  );
+}
+
 function handleAdvance(args: string[]): void {
   // Keep only the positional <completed-slug> [<next-slug>]; any flags are
   // filtered out so they are not misread as the next slug.
@@ -1351,6 +1583,7 @@ function handleAdvance(args: string[]): void {
   // guarded. Runs before any mutation; error() exits leaving state untouched.
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // Detect phase boundary (for PHASE_COMPLETED/VERIFIED/STARTED emissions)
@@ -1464,6 +1697,7 @@ function handleFinalize(args: string[]): void {
     "completed";
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // 1. Mark completed
@@ -1580,6 +1814,7 @@ function handleCompleteWorkflow(args: string[]): void {
   // before any mutation so a refusal leaves state untouched.
   if (!alreadyMarkedCompleted) {
     verifyStageArtifacts(pd, completedStage);
+    verifyReviewerPrecondition(pd, content, completedStage);
   }
 
   // 1. Mark completed
@@ -1808,11 +2043,12 @@ function handleApprove(args: string[]): void {
   // a forced retroactive reject would consume the human-presence freshness
   // boundary (the HUMAN_TURN this gate's approval depends on) and refuse the
   // approval the human already gave, so we record the missing history and honour
-  // the approval, rather than blocking it. The intermediate [R]/[?] checkbox
-  // states never hit disk: the one writeStateFile below lands the final [x]
-  // (mirrors handleReject's gate-start backfill, which likewise never writes the
-  // intermediate [?]). Skipped under the off-switch and in autonomous Construction
-  // (no human at the gate, so no human-driven revision to reconcile).
+  // the approval unless another completion precondition refuses it. The
+  // intermediate [R] checkbox never hits disk; a reviewer refusal persists the
+  // incremented revision count while leaving the gate at its existing [?].
+  // Skipped under the off-switch and in autonomous Construction (no human at the
+  // gate, so no human-driven revision to reconcile).
+  let recoveredRevision = false;
   if (
     !revisionBackstopDisabled() &&
     !isAutonomousMode(content) &&
@@ -1842,10 +2078,18 @@ function handleApprove(args: string[]): void {
         Recovered: "true",
         Details: "Re-entering gate after backfilled revision",
       });
+      recoveredRevision = true;
     } catch (e) {
       error(`Audit emission failed: ${errorMessage(e)}`);
     }
   }
+
+  // Run after the revision backstop: a recovered GATE_REJECTED invalidates the
+  // receipt that preceded the unrecorded artifact revision. The backfilled audit
+  // rows and revision count remain as the consistent reopened-gate state if
+  // this check refuses.
+  if (recoveredRevision) writeStateFile(pd, content);
+  verifyReviewerPrecondition(pd, content, stage);
 
   const timestamp = isoTimestamp();
 

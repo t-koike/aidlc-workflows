@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import {
   acquireAuditLock,
   auditFilePath,
+  cloneIdPath,
   errorMessage,
   isoTimestamp,
   parseFieldArgs,
@@ -54,6 +55,13 @@ const VALID_EVENT_TYPES = new Set([
   "GATE_APPROVED",
   "GATE_REJECTED",
   "QUESTION_ANSWERED",
+  // Reviewer step (§12a) — REVIEW_REQUESTED on dispatch, REVIEW_COMPLETED when
+  // a verdict is read. Emitted by the tool actor `aidlc-log.ts review`. A
+  // reviewer-bearing stage cannot complete without a terminal REVIEW_COMPLETED
+  // in its audit tail (enforced by aidlc-state.ts in approve, advance, finalize,
+  // and complete-workflow).
+  "REVIEW_REQUESTED",
+  "REVIEW_COMPLETED",
   // Artifact events (hook-emitted)
   "ARTIFACT_CREATED",
   "ARTIFACT_UPDATED",
@@ -156,6 +164,8 @@ const EVENT_HEADINGS: Record<string, string> = {
   GATE_APPROVED: "Gate Approved",
   GATE_REJECTED: "Gate Rejected",
   QUESTION_ANSWERED: "Question Answered",
+  REVIEW_REQUESTED: "Review Requested",
+  REVIEW_COMPLETED: "Review Completed",
   ARTIFACT_CREATED: "Artifact Created",
   ARTIFACT_UPDATED: "Artifact Updated",
   ARTIFACT_REUSED: "Artifact Reused",
@@ -543,6 +553,14 @@ function handleAuditFork(args: string[], projectDir: string): void {
   // [fork-emitted:<ts>] correlation tag and exit non-zero so doctor
   // can identify the orphan AUDIT_FORKED row.
   try {
+    // Worktree-local tools must append to the fork shard that audit-merge
+    // consumes. Share the parent clone token inside this isolated worktree;
+    // each worktree still has its own copy of the shard, so concurrent writes
+    // remain isolated until the serial merge. Copy this before the one-shot
+    // audit file so a token-copy failure leaves audit-fork retryable.
+    const wtCloneIdPath = cloneIdPath(wtPath);
+    mkdirSync(dirname(wtCloneIdPath), { recursive: true });
+    copyFileSync(cloneIdPath(projectDir), wtCloneIdPath);
     mkdirSync(dirname(wtAuditPath), { recursive: true });
     copyFileSync(mainAuditPath, wtAuditPath);
   } catch (e) {
