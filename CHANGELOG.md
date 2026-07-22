@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.3] - 2026-07-22
+
+Codex compaction no longer invokes an unsupported PostCompact response contract that can fail after compacting a long session. AI-DLC now relies on Codex's compact-source `SessionStart` event to restore workflow context through the schema-supported `additionalContext` field before the next model turn. **Upgrade:** re-copy `dist/codex/` into the project.
+
+* Removed the redundant PostCompact hook registration; compact-source `SessionStart` continues to re-inject the active workflow mission without recording a duplicate `SESSION_STARTED` audit event.
+
 ## [2.5.2] - 2026-07-21
 
 `/aidlc --doctor` gains an `--export` flag that writes a small, redacted diagnostic report so a misbehaving workflow can be debugged without sharing the whole project directory. One fresh doctor analysis backs both the live `--doctor` render and the export; the workflow diagnosis is advisory (it never changes the exit code — only the existing environment/config checks do, preserving the behaviour CI scripts gate on), and the export merges the legacy environment findings so `report.md`/`report.json` carry the same findings the live report shows. It reconstructs the workflow timeline from the audit trail (stage durations, gates, revisions — scoped to the latest run, events timestamp-sorted, repeated attempts paired chronologically), runs deterministic condition→remedy rules (unresolved gates, state/audit drift, stale/missing runtime graph gated on a workflow existing, cold hooks), and exports only allowlisted, normalized fields — never artifact, contribution, question, or memory bodies. Every project/home path and every custom intent/stage/agent (including `lead_agent`) identifier is hashed or redacted before serialization; secrets are scrubbed in plain, JSON-quoted, JSON-escaped, and punctuation-bearing forms; inputs whose real path escapes the project root are refused (leaf or parent symlink), platform-separator aware for Windows; a malformed runtime graph degrades to a finding instead of crashing doctor; truncation keeps the JSON artifacts valid; per-file and total size are capped. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.
