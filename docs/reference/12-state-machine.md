@@ -269,8 +269,8 @@ Session hooks check for the active intent's `aidlc-state.md` (under `aidlc/space
 
 | Event | Emitter | Notes |
 |---|---|---|
-| `DECISION_RECORDED` | `tools/aidlc-log.ts` | Fires before `AskUserQuestion` so options are captured |
-| `QUESTION_ANSWERED` | `tools/aidlc-log.ts` | Fires after user response |
+| `DECISION_RECORDED` | `tools/aidlc-log.ts` | Fires before a non-gate `AskUserQuestion` so options are captured |
+| `QUESTION_ANSWERED` | `tools/aidlc-log.ts` | Fires after a non-gate question response; approval choices are lifecycle events owned by `report` |
 
 ### Scope and configuration
 

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.5.3] - 2026-07-22
+
+Approval gates no longer deadlock when a conductor redundantly routes the human's approval through `aidlc-log.ts answer` before reporting the approval. The logger recognizes that the target stage is already awaiting approval, returns a successful skip without emitting `QUESTION_ANSWERED`, and leaves the real `HUMAN_TURN` available for `report --result approved`; ordinary interview answers remain workflow-global freshness boundaries, so one answer still cannot authorize a fabricated later approval in the same turn. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.
+
+* `aidlc-log.ts answer --stage <slug>` now returns `{"skipped":"QUESTION_ANSWERED",...,"reason":"approval-gate-report-owned"}` when that same stage is at `[?]`; it emits no answer event and exits successfully so an existing `answer && report` chain can recover.
+* Approval-gate instructions now explicitly reserve `aidlc-log.ts decision` / `answer` for non-gate questions and direct every approval or rejection through `aidlc-orchestrate.ts report`.
+* Human-presence regression coverage now pins the successful redundant-answer path, the no-human refusal, and the rule that an ordinary interview answer still consumes the turn before a later gate.
+
 ## [2.5.2] - 2026-07-21
 
 `/aidlc --doctor` gains an `--export` flag that writes a small, redacted diagnostic report so a misbehaving workflow can be debugged without sharing the whole project directory. One fresh doctor analysis backs both the live `--doctor` render and the export; the workflow diagnosis is advisory (it never changes the exit code — only the existing environment/config checks do, preserving the behaviour CI scripts gate on), and the export merges the legacy environment findings so `report.md`/`report.json` carry the same findings the live report shows. It reconstructs the workflow timeline from the audit trail (stage durations, gates, revisions — scoped to the latest run, events timestamp-sorted, repeated attempts paired chronologically), runs deterministic condition→remedy rules (unresolved gates, state/audit drift, stale/missing runtime graph gated on a workflow existing, cold hooks), and exports only allowlisted, normalized fields — never artifact, contribution, question, or memory bodies. Every project/home path and every custom intent/stage/agent (including `lead_agent`) identifier is hashed or redacted before serialization; secrets are scrubbed in plain, JSON-quoted, JSON-escaped, and punctuation-bearing forms; inputs whose real path escapes the project root are refused (leaf or parent symlink), platform-separator aware for Windows; a malformed runtime graph degrades to a finding instead of crashing doctor; truncation keeps the JSON artifacts valid; per-file and total size are capped. **Upgrade:** re-copy your `dist/<harness>/` shell into the project.
