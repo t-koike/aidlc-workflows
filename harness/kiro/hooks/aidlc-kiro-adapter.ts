@@ -160,7 +160,11 @@ function extractNextInvocation(
   // Match the FIRST `… {{INVOKE}} __delegate orchestrate next <ARGS>` occurrence (the loop's
   // step-1 anchor) and take the tokens up to the closing backtick. The anchor is
   // inside a markdown code span, so the args end at the backtick.
-  const m = expandedPrompt.match(/aidlc-orchestrate\.ts next ([^`\n]*)`/);
+  // Accept the native dispatcher anchor and the legacy filename shape so the
+  // seam keeps working across both invocation channels.
+  const m = expandedPrompt.match(
+    /(?:__delegate\s+orchestrate|aidlc-orchestrate\.ts)\s+next ([^`\n]*)`/,
+  );
   if (!m) return { raw: "", args: [] };
   const raw = m[1].trim();
   return { raw, args: shellWords(raw) };
@@ -364,7 +368,9 @@ if (target === "verb-intercept") {
 if (target === "pretool-block") {
   const cmdStr = String(kiro.tool_input?.command ?? "");
   const cwd = projectDir;
-  const m = cmdStr.match(/aidlc-orchestrate\.ts\s+next\b([^\n]*)/);
+  const m = cmdStr.match(
+    /(?:__delegate\s+orchestrate|aidlc-orchestrate\.ts)\s+next\b([^\n]*)/,
+  );
   const nextArgs = m ? shellWords(m[1].trim()) : [];
   // A next carrying ANY advancing/config flag is a DELIBERATE move — only a truly
   // bare next is the spurious roll-forward. Mirrors the engine done-guard's

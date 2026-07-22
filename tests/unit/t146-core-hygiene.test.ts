@@ -88,13 +88,16 @@ describe("t146 core hygiene — no stray harness-dir path literals in core/ pros
     expect(stray).toEqual([]);
   });
 
-  test("the {{HARNESS_DIR}} token is actually present in core/ (migration ran)", () => {
+  test("the projection tokens are actually present in core/ (migration ran)", () => {
     let tokenFiles = 0;
     for (const file of walkMd(CORE)) {
-      if (readFileSync(file, "utf-8").includes("{{HARNESS_DIR}}")) tokenFiles++;
+      const body = readFileSync(file, "utf-8");
+      if (body.includes("{{HARNESS_DIR}}") || body.includes("{{INVOKE}}")) tokenFiles++;
     }
     // 60 core .md files carried a tokenizable path at migration time; assert a
-    // healthy floor so a botched migration (token stripped) fails loudly.
+    // healthy floor so a botched migration (token stripped) fails loudly. Files
+    // whose only tokenized path was an engine invocation now carry {{INVOKE}}
+    // instead of {{HARNESS_DIR}} - both count.
     expect(tokenFiles).toBeGreaterThan(50);
   });
 });

@@ -362,7 +362,7 @@ describe("t242 state-transition ownership guard", () => {
 
       expect(body, label).toMatch(
         new RegExp(
-          String.raw`aidlc-orchestrate\.ts report\s+--stage\s+${slug}\b`,
+          String.raw`(?:aidlc-orchestrate\.ts|__delegate orchestrate) report\s+--stage\s+${slug}\b`,
         ),
       );
       expect(body, label).not.toMatch(DIRECT_LIFECYCLE_VERB);
@@ -394,16 +394,16 @@ describe("t242 state-transition ownership guard", () => {
       readFileSync(join(STAGES_ROOT, phase, `${slug}.md`), "utf-8");
 
     expect(stage("inception", "reverse-engineering")).toContain(
-      'bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage reverse-engineering --result skipped --reason "<reason>"',
+      '{{INVOKE}} __delegate orchestrate report --stage reverse-engineering --result skipped --reason "<reason>"',
     );
     expect(stage("inception", "user-stories")).toContain(
-      'bun {{HARNESS_DIR}}/tools/aidlc-orchestrate.ts report --stage user-stories --result skipped --reason "<reason>"',
+      '{{INVOKE}} __delegate orchestrate report --stage user-stories --result skipped --reason "<reason>"',
     );
     expect(stage("inception", "requirements-analysis")).toContain(
-      "bun {{HARNESS_DIR}}/tools/aidlc-utility.ts recompose --add user-stories",
+      "{{INVOKE}} __delegate utility recompose --add user-stories",
     );
     expect(stage("inception", "application-design")).toContain(
-      "bun {{HARNESS_DIR}}/tools/aidlc-utility.ts recompose --add units-generation",
+      "{{INVOKE}} __delegate utility recompose --add units-generation",
     );
   });
 });

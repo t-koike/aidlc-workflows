@@ -11,7 +11,7 @@ This chapter documents the hook system architecture, all thirteen hook scripts, 
 This implementation uses thirteen TypeScript hook sources in `.claude/hooks/`,
 routed through the native `aidlc` dispatcher. All thirteen are
 **project-wide** — registered in `settings.json` (the statusline via the
-top-level `statusLine` key, the other eleven via the `hooks` block), they fire
+top-level `statusLine` key, the other twelve via the `hooks` block), they fire
 regardless of which skill is active. They were previously split (six declared
 in `aidlc/SKILL.md` frontmatter as skill-scoped, the rest project-wide);
 v0.6.0 moved the skill-scoped six into `settings.json` so every entry point

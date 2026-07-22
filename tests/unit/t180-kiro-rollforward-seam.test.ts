@@ -131,7 +131,7 @@ describe("t180 verb-intercept turn-clock + read-only/nav latch", () => {
       expect(r.code).toBe(0);
       expect(r.stdout).toContain("SYSTEM (deterministic argument forwarding)");
       expect(r.stdout).toContain(
-        `bun .kiro/tools/aidlc-orchestrate.ts next ${raw}`,
+        `bun .kiro/tools/aidlc.ts __delegate orchestrate next ${raw}`,
       );
       expect(existsSync(counterPath(dir))).toBe(true);
       expect(readFileSync(counterPath(dir), "utf-8").trim()).toBe("1");

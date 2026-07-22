@@ -1984,6 +1984,7 @@ describe("t243 projection channel", () => {
         ".gitignore": [
           "sha256:3da36b2d01551aeae2e366caa08be8cce0dbc9110e252445dcaa4e758e24a0b6",
           "sha256:4f1cd2e930bd37d2f5d715a06ea3fa1e2d39479fc662f0f0562116376132114b",
+          "sha256:f2affb8b34499f057284852456cb8a24ae586b8e816595bf98346141f3516281",
         ],
       },
       codex: {
